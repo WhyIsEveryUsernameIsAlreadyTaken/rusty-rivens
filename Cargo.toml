@@ -1,0 +1,16 @@
+[package]
+name = "rusty-rivens"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+dotenv = "0.15.0"
+error-chain = "0.12.4"
+futures = "0.3.30"
+http = "1.1.0"
+json = "0.12.4"
+reqwest = { version = "0.12.4", features = ["cookies"] }
+serde = { version = "1.0.203", features = ["serde_derive"] }
+serde_json = { version = "1.0.117", features = ["raw_value"] }
+tokio = { version = "1.38.0", features = ["full"] }
+url = "2.5.0"
