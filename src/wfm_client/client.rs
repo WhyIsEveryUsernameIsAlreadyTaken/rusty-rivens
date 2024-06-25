@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{any::type_name, sync::{Arc, Mutex}, time::{Duration, SystemTime}};
+use std::{any::type_name, ops::DerefMut, sync::{Arc, Mutex}, time::{Duration, SystemTime}};
 
 use http::{HeaderMap, Method, StatusCode};
 use reqwest::Client;
@@ -7,13 +7,13 @@ use serde::de::DeserializeOwned;
 use serde_json::{json, Value};
 use url::Url;
 
-use crate::{auth_state::AuthState, rate_limiter::RateLimiter};
+use crate::{auth_state::AuthState, rate_limiter::RateLimiter, rivens::wfm_auctions::Auction};
 
 #[derive(Clone, Debug)]
 pub struct WFMClient {
     endpoint: String,
     limiter: Arc<tokio::sync::Mutex<RateLimiter>>,
-    auth: Arc<Mutex<AuthState>>,
+    pub auth: Arc<Mutex<AuthState>>,
 }
 
 #[derive(Debug)]
@@ -46,13 +46,15 @@ pub struct ApiResult<T> {
 }
 
 #[derive(Debug)]
-pub struct StatusError(StatusCode);
+pub struct StatusError {
+    status: StatusCode
+}
 
 impl std::error::Error for StatusError {}
 
 impl fmt::Display for StatusError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(&format!("{:?}", self))
+        f.write_str(&format!("Bad StatusCode: {:?}", self.status))
     }
 }
 
@@ -107,7 +109,7 @@ impl WFMClient {
             .await
             .map_err(|e| GenericError::new(e, "send_request: ".to_string()))?;
         let elap = now.elapsed().unwrap();
-        println!("Response Time: {}.{}", elap.as_secs(), elap.as_millis());
+        println!("HTTP Response Time: {}secs", elap.as_secs_f32());
         let status = response.status();
         let headers = response.headers().clone();
         let content = response.text().await.unwrap_or_default();
@@ -132,7 +134,7 @@ impl WFMClient {
         }
     }
 
-    pub async fn login(&self, email: String, password: String) -> Result<AuthState, GenericError> {
+    pub async fn login(&self, email: String, password: String) -> Result<(), GenericError> {
         let url = "/auth/signin";
         let method = Method::POST;
         let body = json!({
@@ -146,7 +148,7 @@ impl WFMClient {
             Ok(v) => {
                 println!("{} {}: {}", method, url, v.status);
                 if v.status != StatusCode::OK {
-                    return Err(GenericError::new(StatusError(v.status), "login: ".to_string()))
+                    return Err(GenericError::new(StatusError{status: v.status}, "login: ".to_string()))
                 }
                 v.res
             },
@@ -160,7 +162,26 @@ impl WFMClient {
         } else {
             panic!("No access token returned!");
         };
-        Ok(user)
         // Err(GenericError::new("test error".to_string(), "login: ".to_string()))
+        self.auth.clone().try_lock().unwrap().deref_mut().set(user);
+        Ok(())
+    }
+
+    pub async fn get_all_rivens(&self) -> Result<Vec<Auction>, GenericError> {
+        let url = "/profile/auctions";
+        let method = Method::GET;
+
+        let (auctions, _) = match self
+            .send_request::<Vec<Auction>>(&method, url, Some("auctions"), None).await {
+            Ok(v) => {
+                println!("{} {}: {}", method, url, v.status);
+                if v.status != StatusCode::OK {
+                    return Err(GenericError::new(StatusError{status: v.status}, "get_all_rivens: ".to_string()))
+                }
+                v.res
+            }
+            Err(e) => return Err(GenericError::new(e, "get_all_rivens: ".to_string()))
+        };
+        Ok(auctions)
     }
 }

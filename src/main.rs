@@ -5,56 +5,65 @@ use std::sync::Mutex;
 use std::time::SystemTime;
 use auth_state::AuthState;
 use dotenv::dotenv;
-use main_loop::spawn_main_loop;
+use main_loop::spawn_event_loop;
 use main_loop::Command;
 use main_loop::ResponseCommand;
 use tokio::sync::*;
 use wfm_client::client::WFMClient;
 
 mod wfm_client;
+mod rivens;
 mod rate_limiter;
 mod auth_state;
+mod riven_data_store;
 mod main_loop;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let now = SystemTime::now();
+    let _now = SystemTime::now();
     dotenv().ok();
-    let (handle, join) = spawn_main_loop();
+    let (handle, join) = spawn_event_loop();
     let email = env::var("USERNAME").unwrap();
     let password = env::var("PASSWORD").unwrap();
     let (resp_tx, resp_rx) = oneshot::channel::<ResponseCommand>();
     let mut _auth_state = Arc::new(Mutex::new(AuthState::setup()?));
     let wfm_client = WFMClient::new(_auth_state);
-    let mut _auth_state: AuthState;
     let cmd = Command::Login { creds: (email, password), resp: resp_tx, wfmc: wfm_client.clone()};
     handle.chan.send(cmd).await?;
     match resp_rx.await {
         Ok(v) => match v {
-            ResponseCommand::LoggedIn{resp, auth} => {
+            ResponseCommand(resp) => {
                 println!("{}", resp);
-                _auth_state = auth;
             }
         },
         Err(e) => println!("{}", e.to_string())
     };
+    let (resp_tx, resp_rx) = oneshot::channel::<ResponseCommand>();
 
-    let mut futures = Vec::new();
-
-    for _ in 0..4 {
-        futures.push(handle.chan.send(Command::Test));
+    let cmd = Command::GetAllRivens { resp: resp_tx, wfmc: wfm_client.clone() };
+    handle.chan.send(cmd).await?;
+    match resp_rx.await {
+        Ok(v) => match v {
+            ResponseCommand(resp) => {
+                println!("{}", resp);
+            }
+        },
+        Err(e) => println!("{}", e.to_string())
     }
 
-    for f in futures {
-        f.await?
-    }
+    // let mut futures = Vec::new();
+    // for _ in 0..100000 {
+    //     futures.push(handle.chan.send(Command::_Test));
+    // }
+
+    // for f in futures {
+    //     f.await?
+    // }
 
     let cmd = Command::Stop;
     handle.chan.send(cmd).await?;
 
     join.await.unwrap();
-    let elap = now.elapsed().unwrap();
-    println!("Finished in {}secs", elap.as_secs_f32());
     Ok(())
 }
 
