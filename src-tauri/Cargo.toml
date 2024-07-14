@@ -1,0 +1,26 @@
+[package]
+name = "rusty-rivens"
+version = "0.0.1"
+description = "A Tauri App"
+authors = ["you"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[build-dependencies]
+tauri-build = { version = "1", features = [] }
+
+[dependencies]
+dotenv = "0.15.0"
+error-chain = "0.12.4"
+futures = "0.3.30"
+http = "1.1.0"
+json = "0.12.4"
+jsonwebtoken = "9.3.0"
+reqwest = { version = "0.12.4", features = ["cookies", "json"] }
+tauri = { version = "1", features = ["shell-open"] }
+serde = { version = "1", features = ["derive", "rc", "serde_derive"] }
+serde_json = { version = "1", features = ["raw_value"] }
+time = { version = "0.3.36", features = ["parsing", "serde"] }
+url = "2.5.0"
+http-serde = "2.1.1"
