@@ -28,8 +28,12 @@ pub fn filter_err<T>(input: Result<T, tauri_sys::Error>) -> Result<T, AppError> 
         Ok(v) => Ok(v),
         Err(e) => match e {
             Error::Command(err) => {
+                logging::log!("{}", err);
                 let err = &err.as_str()[15..err.len() - 2];
-                let err: AppError = from_str(err).unwrap();
+                let err: AppError = from_str(err).unwrap_or(AppError {
+                    location: "filter_err".to_string(),
+                    err: "unknown error".to_string()
+                });
                 logging::error!("{}", err.to_string());
                 Err(err)
             },

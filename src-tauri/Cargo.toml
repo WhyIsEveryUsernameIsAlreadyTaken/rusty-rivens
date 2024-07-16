@@ -24,3 +24,7 @@ serde_json = { version = "1", features = ["raw_value"] }
 time = { version = "0.3.36", features = ["parsing", "serde"] }
 url = "2.5.0"
 http-serde = "2.1.1"
+
+[features]
+# This feature is used for production builds or when a dev server is not specified, DO NOT REMOVE!!
+custom-protocol = ["tauri/custom-protocol"]

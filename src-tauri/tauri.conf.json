@@ -6,10 +6,10 @@
     "distDir": "../dist",
     "withGlobalTauri": true
   },
-    "package": {
-        "productName": "rusty-rivens",
-        "version": "0.0.0"
-    },
+  "package": {
+    "productName": "rusty-rivens",
+    "version": "0.0.0"
+  },
   "tauri": {
     "allowlist": {
       "all": false,
@@ -31,7 +31,7 @@
     "bundle": {
       "active": true,
       "targets": "all",
-      "identifier": "com.tauri.dev",
+      "identifier": "com.tauri.rusty-rivens",
       "icon": [
         "icons/32x32.png",
         "icons/128x128.png",

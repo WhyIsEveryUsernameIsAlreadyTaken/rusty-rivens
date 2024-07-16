@@ -5,11 +5,13 @@ use auth_state::{validate, AuthState};
 use futures::lock::Mutex;
 use http::StatusCode;
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
-use tauri::{async_runtime::{block_on, spawn_blocking}, App, Manager};
+use tauri::{async_runtime::{block_on, spawn_blocking}, command, App, Manager};
 use wfm_client::client::WFMClient;
 mod wfm_client;
 mod rate_limiter;
 mod auth_state;
+mod rivens;
+mod riven_data_store;
 mod jwt;
 
 #[derive(Debug, Deserialize)]
@@ -73,7 +75,11 @@ async fn login(email: &str,
     println!("");
     Ok(WrappedStatus { status })
 }
-
+#[tauri::command]
+fn reload_thing() -> bool {
+    println!("test");
+    true
+}
 
 
 async fn setup_app_state(app: &mut App) -> Result<(), AppError> {
@@ -94,6 +100,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_auth_state,
             login,
+            reload_thing,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
