@@ -9,4 +9,5 @@ sudo pacman -S --needed \
   libappindicator-gtk3 \
   librsvg
 
-  cargo install tauri-cli --version "^2.0.0-beta"
+cargo install tauri-cli --version "^2.0.0-beta"
+cargo tauri dev
