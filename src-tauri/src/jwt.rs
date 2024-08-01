@@ -28,11 +28,14 @@ pub fn jwt_is_valid(jwt: &str) -> Result<bool, AppError> {
             ErrorKind::InvalidIssuer => return Ok(false),
             ErrorKind::InvalidAudience => return Ok(false),
             _ => return Err(AppError::new(err.to_string().into(), "validate_jwt".into())),
-        }
+        },
     }
 }
 
-fn validate_jwt(token: &str, input_key: Option<&[u8]>) -> Result<TokenData<Claims>, jsonwebtoken::errors::Error> {
+fn validate_jwt(
+    token: &str,
+    input_key: Option<&[u8]>,
+) -> Result<TokenData<Claims>, jsonwebtoken::errors::Error> {
     let mut validation = Validation::new(Algorithm::HS256);
     validation.sub = None;
     validation.set_audience(&["jwt"]);
@@ -52,8 +55,8 @@ fn validate_jwt(token: &str, input_key: Option<&[u8]>) -> Result<TokenData<Claim
 #[cfg(test)]
 mod tests {
 
-    use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
     use ::time::OffsetDateTime;
+    use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 
     use crate::jwt::{validate_jwt, Claims};
 
@@ -84,7 +87,12 @@ mod tests {
             login_ip: "numbershaha".into(),
             jwt_identity: "hi".into(),
         };
-        let input_valid = encode(&header, &sample_claims_valid, &EncodingKey::from_secret(key)).unwrap();
+        let input_valid = encode(
+            &header,
+            &sample_claims_valid,
+            &EncodingKey::from_secret(key),
+        )
+        .unwrap();
         let jwt_valid = validate_jwt(input_valid.as_str(), Some(key)).unwrap();
         let now = OffsetDateTime::now_utc().unix_timestamp();
         // println!("{:?}", jwt.claims);
@@ -109,7 +117,12 @@ mod tests {
             login_ip: "numbershaha".into(),
             jwt_identity: "hi".into(),
         };
-        let input_valid = encode(&header, &sample_claims_valid, &EncodingKey::from_secret(key)).unwrap();
+        let input_valid = encode(
+            &header,
+            &sample_claims_valid,
+            &EncodingKey::from_secret(key),
+        )
+        .unwrap();
         let _jwt_no_key = validate_jwt(input_valid.as_str(), None).unwrap();
     }
 
@@ -131,7 +144,12 @@ mod tests {
             login_ip: "numbershaha".into(),
             jwt_identity: "hi".into(),
         };
-        let input_expired = encode(&header, &sample_claims_expired, &EncodingKey::from_secret(key)).unwrap();
+        let input_expired = encode(
+            &header,
+            &sample_claims_expired,
+            &EncodingKey::from_secret(key),
+        )
+        .unwrap();
         let jwt_expired = validate_jwt(input_expired.as_str(), Some(key));
         assert!(jwt_expired.is_err());
         jwt_expired.unwrap();

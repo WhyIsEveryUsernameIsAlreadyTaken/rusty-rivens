@@ -1,5 +1,5 @@
 mod app;
-mod pages;
+// mod pages;
 
 use app::*;
 use leptos::*;

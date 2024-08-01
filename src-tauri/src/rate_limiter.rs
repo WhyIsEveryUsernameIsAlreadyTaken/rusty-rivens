@@ -1,16 +1,19 @@
-use std::{thread::sleep, time::{Duration, Instant}};
+use std::{
+    thread::sleep,
+    time::{Duration, Instant},
+};
 
 #[derive(Clone, Debug)]
 pub struct RateLimiter {
     pub tokens: f64,
     last_timestamp: Instant,
     rate: f64,
-    per: Duration
+    per: Duration,
 }
 
 impl RateLimiter {
     pub fn new(rate: f64, per: Duration) -> Self {
-        RateLimiter{
+        RateLimiter {
             tokens: rate,
             last_timestamp: Instant::now(),
             rate,

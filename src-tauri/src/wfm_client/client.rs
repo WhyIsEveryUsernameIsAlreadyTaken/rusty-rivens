@@ -1,5 +1,9 @@
 use core::fmt;
-use std::{ops::{Deref, DerefMut}, sync::Arc, time::{Duration, SystemTime}};
+use std::{
+    ops::{Deref, DerefMut},
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 
 use futures::lock::Mutex;
 use http::{HeaderMap, Method, StatusCode};
@@ -7,7 +11,9 @@ use reqwest::Client;
 use serde_json::{json, Value};
 use url::Url;
 
-use crate::{auth_state::AuthState, rate_limiter::RateLimiter, rivens::wfm_auctions::Auction, AppError};
+use crate::{
+    auth_state::AuthState, rate_limiter::RateLimiter, rivens::wfm_auctions::Auction, AppError,
+};
 
 #[derive(Clone, Debug)]
 pub struct WFMClient {
@@ -19,19 +25,22 @@ pub struct WFMClient {
 #[derive(Debug)]
 pub struct ApiResult {
     pub res: (Option<Value>, HeaderMap),
-    status: StatusCode
+    status: StatusCode,
 }
 
 #[derive(Debug)]
 pub struct StatusError {
-    status: StatusCode
+    status: StatusCode,
 }
 
 impl std::error::Error for StatusError {}
 
 impl fmt::Display for StatusError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(&format!("Request failed with status code: {:?}", self.status))
+        f.write_str(&format!(
+            "Request failed with status code: {:?}",
+            self.status
+        ))
     }
 }
 
@@ -39,10 +48,7 @@ impl WFMClient {
     pub fn new(auth: Arc<Mutex<AuthState>>) -> Self {
         WFMClient {
             endpoint: String::from("https://api.warframe.market/v1/"),
-            limiter: Arc::new(Mutex::new(RateLimiter::new(
-                1.0,
-                Duration::new(1, 0),
-            ))),
+            limiter: Arc::new(Mutex::new(RateLimiter::new(1.0, Duration::new(1, 0)))),
             auth,
         }
     }
@@ -51,7 +57,7 @@ impl WFMClient {
         &self,
         method: &Method,
         url: &str,
-        body: Option<Value>
+        body: Option<Value>,
     ) -> Result<ApiResult, AppError> {
         let auth = self.auth.lock().await;
         let auth = auth.deref();
@@ -68,10 +74,7 @@ impl WFMClient {
                 "Authorization",
                 format!("JWT {}", auth.access_token.clone().unwrap_or("".into())),
             )
-            .header(
-                "User-Agent",
-                "Rusty Rivens v0.1",
-            )
+            .header("User-Agent", "Rusty Rivens v0.1")
             .header("Language", "en")
             .timeout(Duration::from_secs(10));
 
@@ -82,7 +85,8 @@ impl WFMClient {
 
         let now = SystemTime::now();
         println!("request sent");
-        let response = request.send()
+        let response = request
+            .send()
             .await
             .map_err(|e| AppError::new(e.to_string(), "send_request".into()))?;
         println!("response received");
@@ -93,18 +97,17 @@ impl WFMClient {
         let content = response.text().await.unwrap_or_default();
 
         if content == "".to_string() {
-            return Ok(ApiResult{
+            return Ok(ApiResult {
                 res: (None, headers),
-                status
+                status,
             });
         }
         let response: Value = serde_json::from_str(content.as_str())
             .map_err(|e| AppError::new(e.to_string(), String::from("send_request")))?;
 
-
-        Ok(ApiResult{
+        Ok(ApiResult {
             res: (Some(response), headers),
-            status
+            status,
         })
     }
 
@@ -116,16 +119,16 @@ impl WFMClient {
         "password": password,
         });
         let response = match self.send_request(&method, url, Some(body)).await {
-            Ok(v) => {
-                v
-            },
-            Err(e) => return Err(AppError::new(e.to_string(), String::from("login: ")))
+            Ok(v) => v,
+            Err(e) => return Err(AppError::new(e.to_string(), String::from("login: "))),
         };
         let (val, headers) = response.res;
         let token: Option<Arc<str>>;
         if let Some(cookie_header) = headers.get("set-cookie") {
-            let cookies = cookie_header.to_str().map_err(|e| AppError::new(e.to_string(), String::from("login: ")))?;
-            token = Some(cookies[4..].split_once(';').unwrap_or(("","")).0.into());
+            let cookies = cookie_header
+                .to_str()
+                .map_err(|e| AppError::new(e.to_string(), String::from("login: ")))?;
+            token = Some(cookies[4..].split_once(';').unwrap_or(("", "")).0.into());
         } else {
             panic!("No access token returned!");
         };
@@ -133,9 +136,12 @@ impl WFMClient {
         if response.status == StatusCode::OK {
             if let Some(v) = val {
                 let data = v["payload"]["user"].clone();
-                user = serde_json::from_value(data).map_err(|e|
-                    AppError::new(e.to_string(), String::from("login: from_value::<AuthState>"))
-                )?;
+                user = serde_json::from_value(data).map_err(|e| {
+                    AppError::new(
+                        e.to_string(),
+                        String::from("login: from_value::<AuthState>"),
+                    )
+                })?;
                 user.access_token = token;
                 user.update().map_err(|e| e.prop("login: ".into()))?;
             }
@@ -148,23 +154,33 @@ impl WFMClient {
         let url = "/profile/auctions";
         let method = Method::GET;
 
-        let (body_value, _) = match self
-            .send_request(&method, url, None).await {
+        let (body_value, _) = match self.send_request(&method, url, None).await {
             Ok(v) => {
                 println!("{} {}: {}", method, url, v.status);
                 if v.status != StatusCode::OK {
-                    return Err(AppError::new(StatusError{status: v.status}.to_string(), String::from("get_all_rivens: ")))
+                    return Err(AppError::new(
+                        StatusError { status: v.status }.to_string(),
+                        String::from("get_all_rivens: "),
+                    ));
                 }
                 v.res
             }
-            Err(e) => return Err(AppError::new(e.to_string(), String::from("get_all_rivens")))
+            Err(e) => return Err(AppError::new(e.to_string(), String::from("get_all_rivens"))),
         };
         match body_value {
             Some(v) => {
                 let data = v["payload"]["auctions"].clone();
-                serde_json::from_value::<Vec<Auction>>(data).map_err(|e| AppError::new(e.to_string(), String::from("get_all_rivens: from_value::<Vec<Auction>>")))
+                serde_json::from_value::<Vec<Auction>>(data).map_err(|e| {
+                    AppError::new(
+                        e.to_string(),
+                        String::from("get_all_rivens: from_value::<Vec<Auction>>"),
+                    )
+                })
             }
-            None => Err(AppError::new(String::from("No response body associated with response"), String::from("get_all_rivens"))),
+            None => Err(AppError::new(
+                String::from("No response body associated with response"),
+                String::from("get_all_rivens"),
+            )),
         }
     }
 }

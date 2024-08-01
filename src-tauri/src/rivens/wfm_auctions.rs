@@ -21,7 +21,7 @@ pub struct Item {
     attributes: Vec<Attribute>,
     pub weapon_url_name: String,
     re_rolls: u16,
-    mod_rank: u8
+    mod_rank: u8,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
