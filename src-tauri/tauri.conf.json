@@ -17,15 +17,15 @@
     ],
     "createUpdaterArtifacts": "v1Compatible"
   },
-  "productName": "rusty-rivens",
+  "productName": "example",
   "version": "0.0.0",
-  "identifier": "com.tauri.rusty-rivens",
+  "identifier": "com.tauri.example",
   "plugins": {},
   "app": {
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Rusty Rivens",
+        "title": "example",
         "width": 800,
         "height": 600
       }

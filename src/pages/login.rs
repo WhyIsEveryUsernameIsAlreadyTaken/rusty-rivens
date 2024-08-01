@@ -3,10 +3,10 @@ use http::StatusCode;
 use leptos::*;
 use leptos_router::{use_navigate, NavigateOptions};
 use serde::{Deserialize, Serialize};
-use tauri_sys::tauri::invoke;
+use tauri_sys::core::invoke_result;
 use wasm_bindgen_futures::spawn_local;
 
-use crate::{filter_err, EmptyArgs};
+use crate::{AppError, EmptyArgs};
 
 #[derive(Serialize, Deserialize)]
 struct LoginArgs<'a> {
@@ -40,8 +40,8 @@ pub fn Login() -> impl IntoView {
     let (prefetch_auth, set_prefetch_auth) = create_signal(false);
 
     spawn_local(async move {
-        let resp = invoke::<EmptyArgs, bool>("get_auth_state", &EmptyArgs).await;
-        match filter_err(resp) {
+        let resp = invoke_result::<bool, AppError>("get_auth_state", &EmptyArgs).await;
+        match resp {
             Ok(v) => {
                 set_logged_in.set(v);
                 if v {
@@ -66,8 +66,8 @@ pub fn Login() -> impl IntoView {
             }
 
             let args = &LoginArgs { email: &email, password: &password };
-            let resp = invoke::<LoginArgs, WrappedStatus>("login", &args).await;
-            let login_result = match filter_err(resp) {
+            let resp = invoke_result::<WrappedStatus, AppError>("login", &args).await;
+            let login_result = match resp {
                 Ok(v) => {
                     v.status == StatusCode::OK
                 },

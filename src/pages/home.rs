@@ -1,7 +1,7 @@
 use leptos::{component, create_signal, spawn_local, view, IntoView, Show, SignalGet, SignalSet, SignalUpdate};
-use tauri_sys::tauri::invoke;
+use tauri_sys::core::invoke_result;
 
-use crate::{filter_err, EmptyArgs};
+use crate::{AppError, EmptyArgs};
 
 #[component]
 pub fn Home() -> impl IntoView {
@@ -9,8 +9,8 @@ pub fn Home() -> impl IntoView {
     let (init_ran, set_init_ran) = create_signal(false);
     if !init_ran.get() {
         spawn_local(async move {
-            let res =  invoke::<EmptyArgs, bool>("reload_thing", &EmptyArgs).await;
-            match filter_err(res) {
+            let res =  invoke_result::<bool, AppError>("reload_thing", &EmptyArgs).await;
+            match res {
                 Ok(_) => {},
                 Err(err) => {set_errors.update(|v| v.push(err.to_string()))}
             }
