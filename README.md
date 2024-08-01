@@ -10,4 +10,5 @@ sudo pacman -S --needed \
   librsvg
 
 cargo install tauri-cli --version "^2.0.0-beta"
+
 cargo tauri dev
