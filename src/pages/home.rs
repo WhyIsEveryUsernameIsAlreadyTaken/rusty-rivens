@@ -18,7 +18,6 @@ pub fn Home() -> impl IntoView {
     }
     set_init_ran.set(true);
 
-
     view! {
         <Show when=move || { errors.get().len() == 0 }
             fallback=move || view! {
