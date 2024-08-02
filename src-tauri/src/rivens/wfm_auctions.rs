@@ -1,41 +1,11 @@
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Auction {
-    starting_price: u32,
-    pub item: Item,
-    buyout_price: u32,
-    owner: String,
-    #[serde(with = "time::serde::rfc3339")]
-    updated: OffsetDateTime,
-    is_direct_sell: bool,
-    id: String,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Item {
-    mastery_level: u8,
-    pub name: String,
-    polarity: String,
-    attributes: Vec<Attribute>,
-    pub weapon_url_name: String,
-    re_rolls: u16,
-    mod_rank: u8,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct Attribute {
-    value: f32,
-    positive: bool,
-    url_name: String,
-}
-
 #[cfg(test)]
 mod tests {
     use time::macros::datetime;
 
-    use super::Auction;
+    use crate::rivens::inventory::raw_inventory::Auction;
 
     #[test]
     fn test_date_time() {
