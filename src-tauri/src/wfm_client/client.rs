@@ -12,7 +12,7 @@ use serde_json::{json, Value};
 use url::Url;
 
 use crate::{
-    auth_state::AuthState, rate_limiter::RateLimiter, rivens::wfm_auctions::Auction, AppError,
+    auth_state::AuthState, rate_limiter::RateLimiter, rivens::inventory::raw_inventory::Auction, AppError
 };
 
 #[derive(Clone, Debug)]
