@@ -1,6 +1,5 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-use auth_state::{validate, AuthState};
 use futures::lock::Mutex;
 use http::StatusCode;
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
@@ -11,16 +10,16 @@ use std::{
     sync::Arc,
 };
 use tauri::{
-    async_runtime::{block_on, spawn_blocking},
-    command, App, Manager,
+    async_runtime::block_on,
+    App,
+    Manager,
 };
-use wfm_client::client::WFMClient;
-mod auth_state;
+use http_client::{auth_state::AuthState, qf_client::QFClient, wfm_client::WFMClient};
 mod jwt;
 mod rate_limiter;
 mod riven_data_store;
 mod rivens;
-mod wfm_client;
+mod http_client;
 
 #[derive(Debug, Deserialize)]
 pub struct AppError {
@@ -65,10 +64,12 @@ impl Error for AppError {}
 
 #[tauri::command]
 async fn get_auth_state(
-    auth: tauri::State<'_, Arc<Mutex<AuthState>>>,
     wfm: tauri::State<'_, Arc<Mutex<WFMClient>>>,
 ) -> Result<bool, AppError> {
-    validate(auth.inner().clone(), wfm.inner().clone())
+    let wfm = wfm.inner().clone();
+    let wfm = wfm.lock().await;
+    let wfm = wfm.deref();
+    wfm.validate()
         .await
         .map_err(|e| e.prop("Tauri CMD: get_auth_state".into()))
 }
@@ -106,6 +107,9 @@ async fn setup_app_state(app: &mut App) -> Result<(), AppError> {
 
     let wfm_client = Arc::new(Mutex::new(WFMClient::new(auth_state.clone())));
     app.manage(wfm_client.clone());
+
+    let qf_client = Arc::new(Mutex::new(QFClient::setup()));
+    app.manage(qf_client.clone());
     Ok(())
 }
 

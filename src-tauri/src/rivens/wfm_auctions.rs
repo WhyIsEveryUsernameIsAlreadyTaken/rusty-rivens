@@ -1,6 +1,3 @@
-use serde::{Deserialize, Serialize};
-use time::OffsetDateTime;
-
 #[cfg(test)]
 mod tests {
     use time::macros::datetime;

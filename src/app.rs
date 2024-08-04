@@ -1,9 +1,8 @@
-use std::{fmt::{self, Display}, future};
+use std::fmt::{self, Display};
 
 use leptos::*;
 use leptos_router::{NavigateOptions, Redirect, Route, Router, Routes, State};
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use tauri_sys::Error;
+use serde::{Deserialize, Serialize};
 // use tauri_sys::{tauri::invoke, Error};
 
 use crate::pages::{home::Home, login::Login};

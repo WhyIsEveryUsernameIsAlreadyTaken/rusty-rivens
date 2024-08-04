@@ -1,17 +1,11 @@
 use std::env;
 use std::io::{Read, Write};
-use std::ops::Deref;
 use std::string::String;
 use std::sync::Arc;
 use std::{fs::File, path::PathBuf};
 
-use futures::lock::Mutex;
-use http::Method;
 use serde::{Deserialize, Serialize};
-use serde_json::from_value;
 
-use crate::jwt::jwt_is_valid;
-use crate::wfm_client::client::WFMClient;
 use crate::AppError;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -77,48 +71,4 @@ impl AuthState {
         self.ingame_name = new_auth.ingame_name;
         self.access_token = new_auth.access_token;
     }
-}
-
-pub async fn validate(
-    auth: Arc<Mutex<AuthState>>,
-    wfm: Arc<Mutex<WFMClient>>,
-) -> Result<bool, AppError> {
-    let valid_jwt: bool;
-    if let Some(token) = auth.lock().await.deref().clone().access_token {
-        valid_jwt = jwt_is_valid(&token).map_err(|e| e.prop("validate".into()))?;
-    } else {
-        return Ok(false);
-    }
-    if !valid_jwt {
-        return Ok(false);
-    }
-    let wfm = wfm.lock().await;
-    let wfm = wfm.deref();
-    let res = wfm.send_request(&Method::GET, "profile", None).await;
-    let (body, headers) = match res {
-        Ok(v) => v.res,
-        Err(e) => return Err(e.prop("validate".into())),
-    };
-    let mut is_valid = false;
-    if let Some(body) = body {
-        let value = body["profile"].clone();
-        let anonymous = from_value::<bool>(value["anonymous"].clone()).map_err(|e| {
-            AppError::new(
-                e.to_string(),
-                String::from("validate: from_value(anonymous)"),
-            )
-        })?;
-        let verification = from_value::<bool>(value["verification"].clone()).map_err(|e| {
-            AppError::new(
-                e.to_string(),
-                String::from("validate: from_value(verification)"),
-            )
-        })?;
-        if anonymous || !verification {
-            is_valid = false;
-        } else {
-            is_valid = true;
-        }
-    }
-    Ok(is_valid)
 }

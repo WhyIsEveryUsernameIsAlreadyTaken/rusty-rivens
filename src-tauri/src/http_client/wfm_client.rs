@@ -1,19 +1,18 @@
-use core::fmt;
 use std::{
     ops::{Deref, DerefMut},
     sync::Arc,
-    time::{Duration, SystemTime},
+    time::Duration,
 };
 
 use futures::lock::Mutex;
-use http::{HeaderMap, Method, StatusCode};
-use reqwest::Client;
-use serde_json::{json, Value};
-use url::Url;
+use http::{Method, StatusCode};
+use serde_json::{from_value, json};
 
 use crate::{
-    auth_state::AuthState, rate_limiter::RateLimiter, rivens::inventory::raw_inventory::Auction, AppError
+    http_client::client::StatusError, jwt::jwt_is_valid, rate_limiter::RateLimiter, rivens::inventory::raw_inventory::Auction, AppError
 };
+
+use super::{auth_state::AuthState, client::HttpClient};
 
 #[derive(Clone, Debug)]
 pub struct WFMClient {
@@ -22,27 +21,7 @@ pub struct WFMClient {
     pub auth: Arc<Mutex<AuthState>>,
 }
 
-#[derive(Debug)]
-pub struct ApiResult {
-    pub res: (Option<Value>, HeaderMap),
-    status: StatusCode,
-}
-
-#[derive(Debug)]
-pub struct StatusError {
-    status: StatusCode,
-}
-
-impl std::error::Error for StatusError {}
-
-impl fmt::Display for StatusError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.write_str(&format!(
-            "Request failed with status code: {:?}",
-            self.status
-        ))
-    }
-}
+impl HttpClient for WFMClient {}
 
 impl WFMClient {
     pub fn new(auth: Arc<Mutex<AuthState>>) -> Self {
@@ -53,72 +32,22 @@ impl WFMClient {
         }
     }
 
-    pub async fn send_request(
-        &self,
-        method: &Method,
-        url: &str,
-        body: Option<Value>,
-    ) -> Result<ApiResult, AppError> {
-        let auth = self.auth.lock().await;
-        let auth = auth.deref();
-        let mut rate_limiter = self.limiter.lock().await;
-        let rate_limiter = rate_limiter.deref_mut();
-
-        rate_limiter.wait_for_token().await;
-
-        let client = Client::new();
-        let new_url = format!("{}{}", self.endpoint, url);
-        let request = client
-            .request(method.clone(), Url::parse(&new_url).unwrap())
-            .header(
-                "Authorization",
-                format!("JWT {}", auth.access_token.clone().unwrap_or("".into())),
-            )
-            .header("User-Agent", "Rusty Rivens v0.1")
-            .header("Language", "en")
-            .timeout(Duration::from_secs(10));
-
-        let request = match body.clone() {
-            Some(content) => request.json(&content),
-            None => request,
-        };
-
-        let now = SystemTime::now();
-        println!("request sent");
-        let response = request
-            .send()
-            .await
-            .map_err(|e| AppError::new(e.to_string(), "send_request".into()))?;
-        println!("response received");
-        let elap = now.elapsed().unwrap();
-        println!("HTTP Response Time: {}secs", elap.as_secs_f32());
-        let status = response.status();
-        let headers = response.headers().clone();
-        let content = response.text().await.unwrap_or_default();
-
-        if content == "".to_string() {
-            return Ok(ApiResult {
-                res: (None, headers),
-                status,
-            });
-        }
-        let response: Value = serde_json::from_str(content.as_str())
-            .map_err(|e| AppError::new(e.to_string(), String::from("send_request")))?;
-
-        Ok(ApiResult {
-            res: (Some(response), headers),
-            status,
-        })
-    }
-
     pub async fn login(&self, email: &str, password: &str) -> Result<StatusCode, AppError> {
-        let url = "/auth/signin";
-        let method = Method::POST;
         let body = json!({
         "email": email,
         "password": password,
         });
-        let response = match self.send_request(&method, url, Some(body)).await {
+        let auth = self.auth.lock().await;
+        let auth = auth.deref();
+        let mut rate_limiter = self.limiter.lock().await;
+        let rate_limiter = rate_limiter.deref_mut();
+        let response = match self.send_request(
+            Method::POST,
+            &format!("{}{}", self.endpoint, "/auth/signin"),
+            rate_limiter,
+            Some(auth),
+            Some(body)
+        ).await {
             Ok(v) => v,
             Err(e) => return Err(AppError::new(e.to_string(), String::from("login: "))),
         };
@@ -150,11 +79,72 @@ impl WFMClient {
         Ok(response.status)
     }
 
+    pub async fn validate(
+        &self,
+    ) -> Result<bool, AppError> {
+        let auth = self.auth.lock().await;
+        let auth = auth.deref();
+        let valid_jwt: bool;
+        if let Some(token) = auth.clone().access_token {
+            valid_jwt = jwt_is_valid(&token).map_err(|e| e.prop("validate".into()))?;
+        } else {
+            return Ok(false);
+        }
+        if !valid_jwt {
+            return Ok(false);
+        }
+        let mut rate_limiter = self.limiter.lock().await;
+        let rate_limiter = rate_limiter.deref_mut();
+        let res = self.send_request(
+            Method::GET,
+            "profile",
+            rate_limiter,
+            Some(auth),
+            None,
+        ).await;
+        let (body, _) = match res {
+            Ok(v) => v.res,
+            Err(e) => return Err(e.prop("validate".into())),
+        };
+        let mut is_valid = false;
+        if let Some(body) = body {
+            let value = body["profile"].clone();
+            let anonymous = from_value::<bool>(value["anonymous"].clone()).map_err(|e| {
+                AppError::new(
+                    e.to_string(),
+                    String::from("validate: from_value(anonymous)"),
+                )
+            })?;
+            let verification = from_value::<bool>(value["verification"].clone()).map_err(|e| {
+                AppError::new(
+                    e.to_string(),
+                    String::from("validate: from_value(verification)"),
+                )
+            })?;
+            if anonymous || !verification {
+                is_valid = false;
+            } else {
+                is_valid = true;
+            }
+        }
+        Ok(is_valid)
+    }
+
     pub async fn get_all_rivens(&self) -> Result<Vec<Auction>, AppError> {
         let url = "/profile/auctions";
         let method = Method::GET;
 
-        let (body_value, _) = match self.send_request(&method, url, None).await {
+        let auth = self.auth.lock().await;
+        let auth = auth.deref();
+        let mut rate_limiter = self.limiter.lock().await;
+        let rate_limiter = rate_limiter.deref_mut();
+        let (body_value, _) = match self.send_request(
+            method.clone(),
+            &format!("{}{}", self.endpoint, url),
+            rate_limiter,
+            Some(auth),
+            None,
+        ).await {
             Ok(v) => {
                 println!("{} {}: {}", method, url, v.status);
                 if v.status != StatusCode::OK {
