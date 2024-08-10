@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 use futures::lock::Mutex;
 use http::StatusCode;
+use rivens::inventory::riven_lookop::RivenDataLookup;
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use std::{
     error::Error,
@@ -108,8 +109,11 @@ async fn setup_app_state(app: &mut App) -> Result<(), AppError> {
     let wfm_client = Arc::new(Mutex::new(WFMClient::new(auth_state.clone())));
     app.manage(wfm_client.clone());
 
-    let qf_client = Arc::new(Mutex::new(QFClient::setup()));
+    let qf_client = Arc::new(Mutex::new(QFClient::new()));
     app.manage(qf_client.clone());
+
+    let riven_lookup = Arc::new(Mutex::new(RivenDataLookup::setup(qf_client.clone())));
+    app.manage(riven_lookup.clone());
     Ok(())
 }
 

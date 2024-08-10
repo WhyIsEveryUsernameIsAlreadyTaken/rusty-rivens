@@ -8,7 +8,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [build-dependencies]
-tauri-build = { version = "2.0.0-beta", features = [] }
+tauri-build = { version = "=2.0.0-beta.19", features = [] }
 
 [dependencies]
 dotenv = "0.15.0"
@@ -18,10 +18,11 @@ jsonwebtoken = "9.3.0"
 reqwest = { version = "0.12.4", features = ["cookies", "json"] }
 serde = { version = "1.0", features = ["derive", "rc", "serde_derive"] }
 serde_json = { version = "1.0", features = ["raw_value"] }
-tauri = { version = "2.0.0-beta", features = [] }
+tauri = { version = "=2.0.0-beta.25", features = [] }
+tauri-utils = { version = "=2.0.0-beta.19", features = [] }
 time = { version = "0.3.36", features = ["parsing", "serde"] }
 url = "2.5.0"
-tauri-plugin-shell = "2.0.0-beta.10"
+tauri-plugin-shell = "=2.0.0-beta.10"
 http-serde = "2.1.1"
 
 [features]
