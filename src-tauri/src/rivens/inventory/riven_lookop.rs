@@ -18,7 +18,7 @@ pub struct Weapon {
     pub wfm_url_name: Option<Arc<str>>,
     pub unique_name: Option<Arc<str>>,
     pub disposition: Option<f64>,
-    pub weapon_type: Option<Arc<str>>
+    pub upgrade_type: Option<Arc<str>>
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

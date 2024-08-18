@@ -2,7 +2,7 @@
 mod tests {
     use time::macros::datetime;
 
-    use crate::rivens::inventory::raw_inventory::Auction;
+    use crate::rivens::inventory::convert_raw_inventory::Auction;
 
     #[test]
     fn test_date_time() {

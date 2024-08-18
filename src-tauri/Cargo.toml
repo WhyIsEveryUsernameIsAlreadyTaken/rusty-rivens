@@ -24,6 +24,8 @@ time = { version = "0.3.36", features = ["parsing", "serde"] }
 url = "2.5.0"
 tauri-plugin-shell = "=2.0.0-beta.10"
 http-serde = "2.1.1"
+cbc = { version = "0.1.2", features = ["alloc"] }
+aes = "0.8.4"
 
 [features]
 # This feature is used for production builds or when a dev server is not specified, DO NOT REMOVE!!

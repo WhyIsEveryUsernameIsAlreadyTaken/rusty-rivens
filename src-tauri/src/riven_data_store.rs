@@ -5,7 +5,7 @@ use std::{
     path::PathBuf,
 };
 
-use crate::{rivens::inventory::raw_inventory::Auction, AppError};
+use crate::{rivens::inventory::convert_raw_inventory::Auction, AppError};
 
 // pub async fn get_rivens(wfmc: WFMClient, resp: Sender<ResponseCommand>) -> Result<(), AppError> {
 //     let auctions = match wfmc.get_all_rivens().await {

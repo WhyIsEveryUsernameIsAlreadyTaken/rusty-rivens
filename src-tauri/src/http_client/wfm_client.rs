@@ -9,7 +9,7 @@ use http::{Method, StatusCode};
 use serde_json::{from_value, json};
 
 use crate::{
-    http_client::client::StatusError, jwt::jwt_is_valid, rate_limiter::RateLimiter, rivens::inventory::raw_inventory::Auction, AppError
+    http_client::client::StatusError, jwt::jwt_is_valid, rate_limiter::RateLimiter, rivens::inventory::convert_raw_inventory::Auction, AppError
 };
 
 use super::{auth_state::AuthState, client::HttpClient};
