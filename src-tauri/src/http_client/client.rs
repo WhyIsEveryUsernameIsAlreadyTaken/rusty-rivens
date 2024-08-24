@@ -1,5 +1,5 @@
 use core::fmt;
-use std::time::{Duration, SystemTime};
+use std::{str::FromStr, time::{Duration, SystemTime}};
 
 use http::{HeaderMap, Method, StatusCode};
 use reqwest::Client;
@@ -32,7 +32,7 @@ impl fmt::Display for StatusError {
     }
 }
 
-pub trait HttpClient {
+pub trait HttpClient<'a> {
     async fn send_request(
         &self,
         method: Method,
@@ -84,8 +84,9 @@ pub trait HttpClient {
                 status,
             });
         }
-        let response: Value = serde_json::from_str(content.as_str())
-            .map_err(|e| AppError::new(e.to_string(), String::from("send_request")))?;
+        let response = serde_json::Value::from_str(content.as_str()).map_err(|e|
+            AppError::new(e.to_string(), String::from("Value::from_str: send_request"))
+        )?;
 
         Ok(ApiResult {
             res: (Some(response), headers),

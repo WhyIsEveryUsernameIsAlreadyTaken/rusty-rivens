@@ -15,7 +15,7 @@ pub struct QFClient {
     pub limiter: Arc<Mutex<RateLimiter>>,
 }
 
-impl HttpClient for QFClient {}
+impl<'a> HttpClient<'a> for QFClient {}
 
 impl QFClient {
     pub fn new() -> Self {

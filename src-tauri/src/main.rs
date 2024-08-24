@@ -2,7 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 use futures::lock::Mutex;
 use http::StatusCode;
-use rivens::inventory::riven_lookop::RivenDataLookup;
+use rivens::inventory::{database::InventoryDB, riven_lookop::RivenDataLookup};
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use std::{
     error::Error,
@@ -114,6 +114,10 @@ async fn setup_app_state(app: &mut App) -> Result<(), AppError> {
 
     let riven_lookup = Arc::new(Mutex::new(RivenDataLookup::setup(qf_client.clone())));
     app.manage(riven_lookup.clone());
+
+    let database = InventoryDB::open().map_err(|e| AppError::new(e.to_string(), String::from("setup_app_state")));
+    let database = Arc::new(Mutex::new(database));
+    app.manage(database.clone());
     Ok(())
 }
 

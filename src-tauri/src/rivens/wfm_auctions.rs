@@ -60,6 +60,6 @@ mod tests {
         let auction: Auction = serde_json::from_str(input).unwrap();
         let sample = datetime!(2024-05-04 19:21:58.000+00:00);
 
-        assert_eq!(sample, auction.updated)
+        assert_eq!(sample, auction.updated.unwrap())
     }
 }

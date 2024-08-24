@@ -48,7 +48,7 @@ impl Display for ParseErrorType {
     }
 }
 
-pub fn decrypt_last_data() -> Result<Vec<Upgrades>, InventoryDecryptError> {
+pub fn decrypt_last_data<'a>() -> Result<Vec<Upgrades>, InventoryDecryptError> {
     let path:PathBuf = PathBuf::from("../lastData.dat");
     let mut file = File::open(path).map_err(|e| InventoryDecryptError::IoError(e))?;
     let mut ciphertext: Vec<u8> = vec![];
@@ -83,13 +83,13 @@ pub fn decrypt_last_data() -> Result<Vec<Upgrades>, InventoryDecryptError> {
         Some(v) => v,
         None => return Err(InventoryDecryptError::OtherError("No array associated with the field: \"Upgrades\"".into())),
     };
-    let mut upgrades: Vec<Upgrades> = vec![];
-    upgrades_raw.iter()
+    let upgrades = upgrades_raw.iter()
         .filter(|&upgrade| !upgrade["UpgradeFingerprint"]["compat"].is_null())
-        .try_for_each(|upgrade| -> Result<(), serde_json::Error> {
-            upgrades.push(from_value(upgrade.clone())?);
-            Ok(())
+        .try_fold(vec![], |mut acc, upgrade| -> Result<Vec<Upgrades>, serde_json::Error> {
+            acc.push(from_value(upgrade.clone())?);
+            Ok(acc)
         }).map_err(|e| InventoryDecryptError::DeserializeError(e))?;
+
     Ok(upgrades)
 }
 
@@ -103,5 +103,6 @@ mod tests {
     fn test_deserialize() {
         dotenv().unwrap();
         let upgrades = decrypt_last_data().unwrap();
+        // println!("{}")
     }
 }

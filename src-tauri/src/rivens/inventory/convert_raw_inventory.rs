@@ -1,12 +1,9 @@
-// TODO: Need to replace panics with proper error handling and make test(s) for this.
-// Won't be able to do the ladder until I get access to my desktop pc with the files
-// needed to do the tests.
 use std::{cmp::Ordering, error::Error, fmt::Display, ops::Deref, rc::Rc, sync::Arc};
 
+use super::riven_lookop::RivenDataLookup;
 use futures::lock::Mutex;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
-use super::riven_lookop::RivenDataLookup;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Upgrades {
@@ -21,7 +18,7 @@ pub struct Upgrades {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ItemID {
     #[serde(alias = "$oid")]
-    pub oid: Rc<str>
+    pub oid: Rc<str>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -55,27 +52,45 @@ pub struct Curses {
     pub value: i32,
 }
 
+// TODO: need to refactor this to not have everything be public, and refactor
+// other places to have better controlled access to this struct
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Auction {
-    starting_price: u32,
-    pub item: Item,
-    buyout_price: u32,
-    owner: String,
-    #[serde(with = "time::serde::rfc3339")]
-    pub updated: OffsetDateTime,
-    is_direct_sell: bool,
-    id: String,
+    pub starting_price: Option<u32>,
+    pub buyout_price: Option<u32>,
+    pub owner: Option<String>,
+    #[serde(with = "time::serde::rfc3339::option")]
+    pub updated: Option<OffsetDateTime>,
+    pub is_direct_sell: bool,
+    pub id: Option<String>,
+    pub oid: String,
+}
+
+impl Default for Auction {
+    fn default() -> Self {
+        Self {
+            starting_price: None,
+            buyout_price: None,
+            owner: None,
+            updated: None,
+            is_direct_sell: true,
+            id: None,
+            oid: String::new(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Item {
-    mastery_level: u8,
-    pub name: String,
-    polarity: String,
-    attributes: Vec<Attribute>,
-    pub weapon_url_name: String,
-    re_rolls: i32,
-    mod_rank: u8,
+    pub mastery_level: u8,
+    pub name: Rc<str>,
+    pub polarity: Rc<str>,
+    pub attributes: Vec<Attribute>,
+    pub weapon_url_name: Rc<str>,
+    pub re_rolls: i32,
+    pub mod_rank: u8,
+    #[serde(default)]
+    pub oid: Rc<str>,
 }
 
 impl Default for Item {
@@ -87,6 +102,7 @@ impl Default for Item {
             attributes: Vec::new(),
             weapon_url_name: "".into(),
             re_rolls: 0,
+            oid: "".into(),
             mod_rank: 0,
         }
     }
@@ -94,15 +110,14 @@ impl Default for Item {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Attribute {
-    value: f64,
-    positive: bool,
-    url_name: String,
+    pub value: f64,
+    pub positive: bool,
+    pub url_name: String,
 }
 
-
-struct RawAttributes {
+struct RawAttributes<'a> {
     positive: bool,
-    tag: Rc<str>,
+    tag: &'a str,
     value: i32,
 }
 
@@ -111,9 +126,9 @@ struct AttributeInfo {
     positive: bool,
     value: i32,
     units: Units,
-    wfm_url: Arc<str>,
-    prefix: Arc<str>,
-    suffix: Arc<str>,
+    wfm_url: Rc<str>,
+    prefix: Rc<str>,
+    suffix: Rc<str>,
     base_value: f64,
 }
 
@@ -131,7 +146,10 @@ impl Ord for AttributeInfo {
     }
 }
 
-async fn convert_inventory_data(lookup: Arc<Mutex<RivenDataLookup>>, upgrades: Vec<Upgrades>) -> Vec<Item> {
+pub async fn convert_inventory_data(
+lookup: Arc<Mutex<RivenDataLookup>>,
+    upgrades: Vec<Upgrades>,
+) -> Vec<Item> {
     let lookup = lookup.lock().await;
     let lookup = lookup.deref();
     let mut items: Vec<Item> = vec![];
@@ -158,26 +176,29 @@ async fn convert_inventory_data(lookup: Arc<Mutex<RivenDataLookup>>, upgrades: V
         upgrade.upgrade_fingerprint.buffs.iter().for_each(|buff| {
             raw_attributes.push(RawAttributes {
                 positive: true,
-                tag: buff.tag.clone(),
+                tag: &buff.tag,
                 value: buff.value,
             });
         });
         upgrade.upgrade_fingerprint.curses.iter().for_each(|curse| {
             raw_attributes.push(RawAttributes {
                 positive: false,
-                tag: curse.tag.clone(),
+                tag: &curse.tag,
                 value: curse.value,
             });
         });
 
-        let (_weapon_url_name, weapon_type, disposition) = match lookup_weapon_data(lookup, upgrade.upgrade_fingerprint.compat.as_ref().unwrap().deref()) {
+        let (_weapon_url_name, weapon_type, disposition) = match lookup_weapon_data(
+            lookup,
+            upgrade.upgrade_fingerprint.compat.as_ref().unwrap().deref(),
+        ) {
             Ok(v) => v,
             Err(e) => {
                 println!("{}", e);
                 return;
             }
         };
-        let mut attribute_info = match lookup_riven_data(lookup, weapon_type, raw_attributes) {
+        let mut attribute_info = match lookup_riven_data(lookup, weapon_type.as_str(), raw_attributes) {
             Ok(v) => v,
             Err(e) => {
                 println!("{}", e);
@@ -187,55 +208,72 @@ async fn convert_inventory_data(lookup: Arc<Mutex<RivenDataLookup>>, upgrades: V
         attribute_info.sort();
         attribute_info.reverse();
         let name = parse_riven_name(&attribute_info, buff_count);
-        let _attributes = calculate_attributes(attribute_info, good_multiplier, bad_multiplier, disposition, upgrade.upgrade_fingerprint.lvl);
+        let _attributes = calculate_attributes(
+            attribute_info,
+            good_multiplier,
+            bad_multiplier,
+            disposition,
+            upgrade.upgrade_fingerprint.lvl,
+        );
         let polarity = if upgrade.upgrade_fingerprint.pol == "AP_ATTACK".into() {
-            String::from("madurai")
+            "madurai"
         } else if upgrade.upgrade_fingerprint.pol == "AP_DEFENSE".into() {
-            String::from("vazarin")
+            "vazarin"
         } else if upgrade.upgrade_fingerprint.pol == "AP_TACTIC".into() {
-            String::from("naramon")
+            "naramon"
         } else {
             panic!("Invalid polarity was given");
         };
         items.push(Item {
             mastery_level: upgrade.upgrade_fingerprint.lvl_req,
-            name,
-            polarity,
+            name: name.into(),
+            polarity: polarity.into(),
             attributes: _attributes,
-            weapon_url_name: _weapon_url_name.to_string(),
+            weapon_url_name: _weapon_url_name.into(),
             re_rolls: upgrade.upgrade_fingerprint.rerolls,
+            oid: upgrade.item_id.oid.clone(),
             mod_rank: upgrade.upgrade_fingerprint.lvl,
         })
     });
     items
 }
 
-fn parse_riven_name(attributes_info: &Vec<AttributeInfo>, num_buffs: usize, ) -> String {
+fn parse_riven_name(attributes_info: &Vec<AttributeInfo>, num_buffs: usize) -> String {
     if num_buffs == 2 {
         format!("{}{}", attributes_info[0].prefix, attributes_info[1].suffix)
     } else if num_buffs == 3 {
-        format!("{}-{}{}", attributes_info[0].prefix, attributes_info[1].prefix, attributes_info[2].suffix)
+        format!(
+            "{}-{}{}",
+            attributes_info[0].prefix, attributes_info[1].prefix, attributes_info[2].suffix
+        )
     } else {
         panic!("no buffs with the associated riven!")
     }
 }
 
-fn calculate_attributes(attribute_info: Vec<AttributeInfo>, good_multiplier: f64, bad_multiplier: f64, disposition: f64, lvl: u8) -> Vec<Attribute> {
+fn calculate_attributes(
+    attribute_info: Vec<AttributeInfo>,
+    good_multiplier: f64,
+    bad_multiplier: f64,
+    disposition: f64,
+    lvl: u8,
+) -> Vec<Attribute> {
     let mut attributes = Vec::with_capacity(2);
     attribute_info.iter().for_each(|attr| {
-        let x = f64::min(f64::max(0.9 + attr.value as f64 / 53687091.0 / 100.0, 0.9), 1.1);
+        let x = f64::min(
+            f64::max(0.9 + attr.value as f64 / 53687091.0 / 100.0, 0.9),
+            1.1,
+        );
         let good_bad_multiplier = if attr.positive {
             good_multiplier
         } else {
             bad_multiplier
         };
         let y = 90.0 * attr.base_value * disposition * good_bad_multiplier;
-        let value = x*y*100.0*(lvl + 1) as f64 / 9.0;
+        let value = x * y * 100.0 * (lvl + 1) as f64 / 9.0;
         let value = match attr.units {
-            Units::Multiply => {
-                (value + 100.0).round() / 100.0
-            },
-            _ => (value * 10.0).round() / 10.0
+            Units::Multiply => (value + 100.0).round() / 100.0,
+            _ => (value * 10.0).round() / 10.0,
         };
         attributes.push(Attribute {
             value,
@@ -249,21 +287,28 @@ fn calculate_attributes(attribute_info: Vec<AttributeInfo>, good_multiplier: f64
 #[derive(Debug)]
 enum WeaponLookupError {
     InvalidWeapon(Rc<str>),
-    InvalidField(WeaponLookupField)
+    InvalidField(WeaponLookupField),
 }
 
 impl Display for WeaponLookupError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let err = format!("WeaponLookupError: {}", match self {
-            WeaponLookupError::InvalidWeapon(compat) => format!("Could not find weapon matching the conmpat: {}", compat),
-            WeaponLookupError::InvalidField(field) => format!("InvalidField: {}", match field {
-                WeaponLookupField::Weapons => "Weapons",
-                WeaponLookupField::UniqueName => "UniqueName",
-                WeaponLookupField::WeaponUrlName => "WeaponUrlName",
-                WeaponLookupField::UpgradeType => "UpgradeType",
-                WeaponLookupField::Disposition => "Disposition",
-            }),
-        });
+        let err = format!(
+            "WeaponLookupError: {}",
+            match self {
+                WeaponLookupError::InvalidWeapon(compat) =>
+                    format!("Could not find weapon matching the conmpat: {}", compat),
+                WeaponLookupError::InvalidField(field) => format!(
+                    "InvalidField: {}",
+                    match field {
+                        WeaponLookupField::Weapons => "Weapons",
+                        WeaponLookupField::UniqueName => "UniqueName",
+                        WeaponLookupField::WeaponUrlName => "WeaponUrlName",
+                        WeaponLookupField::UpgradeType => "UpgradeType",
+                        WeaponLookupField::Disposition => "Disposition",
+                    }
+                ),
+            }
+        );
 
         f.write_str(err.as_str())
     }
@@ -277,70 +322,104 @@ enum WeaponLookupField {
     UniqueName,
     WeaponUrlName,
     Disposition,
-    UpgradeType
+    UpgradeType,
 }
 
 fn lookup_weapon_data(
     lookup: &RivenDataLookup,
-    compat: &str
-) -> Result<(Rc<str>, Rc<str>, f64), WeaponLookupError> {
+    compat: &str,
+) -> Result<(String, String, f64), WeaponLookupError> {
     if lookup.weapons.is_none() {
-        return Err(WeaponLookupError::InvalidField(WeaponLookupField::Weapons))
+        return Err(WeaponLookupError::InvalidField(WeaponLookupField::Weapons));
     }
     let weapons = lookup.weapons.as_ref().unwrap();
-    if weapons.iter().find(|&weap| weap.unique_name.is_none()).is_some() {
-        return Err(WeaponLookupError::InvalidField(WeaponLookupField::UniqueName))
+    if weapons
+        .iter()
+        .find(|&weap| weap.unique_name.is_none())
+        .is_some()
+    {
+        return Err(WeaponLookupError::InvalidField(
+            WeaponLookupField::UniqueName,
+        ));
     }
-    if let Some(weapon) = weapons.iter().find(|&weap| weap.clone().unique_name.unwrap() == compat.into()) {
+    if let Some(weapon) = weapons
+        .iter()
+        .find(|&weap| weap.clone().unique_name.unwrap() == compat.into())
+    {
         let url_name = match weapon.wfm_url_name.as_ref() {
             Some(v) => v.deref(),
-            None => return Err(WeaponLookupError::InvalidField(WeaponLookupField::WeaponUrlName)),
+            None => {
+                return Err(WeaponLookupError::InvalidField(
+                    WeaponLookupField::WeaponUrlName,
+                ))
+            }
         };
         let disposition = match weapon.disposition {
             Some(v) => v,
-            None => return Err(WeaponLookupError::InvalidField(WeaponLookupField::Disposition)),
+            None => {
+                return Err(WeaponLookupError::InvalidField(
+                    WeaponLookupField::Disposition,
+                ))
+            }
         };
         let weapon_type = match weapon.upgrade_type.clone() {
             Some(v) => v,
-            None => return Err(WeaponLookupError::InvalidField(WeaponLookupField::UpgradeType)),
+            None => {
+                return Err(WeaponLookupError::InvalidField(
+                    WeaponLookupField::UpgradeType,
+                ))
+            }
         };
-        return Ok((url_name.into(), weapon_type.deref().into(), disposition))
+        return Ok((
+            url_name.to_string(),
+            weapon_type.deref().into(),
+            disposition,
+        ));
     } else {
-        return Err(WeaponLookupError::InvalidWeapon(compat.into()))
+        return Err(WeaponLookupError::InvalidWeapon(compat.into()));
     }
 }
 
 #[derive(Debug)]
-enum RivenLookupError {
-    InvalidItemType(Rc<str>),
-    InvalidAttribute(Rc<str>),
+enum RivenLookupError<'a> {
+    InvalidItemType(&'a str),
+    InvalidAttribute(&'a str),
     UnitsLookupError(UnitsLookupError),
     InvalidField(RivenLookupField),
 }
 
-impl Display for RivenLookupError {
+impl<'a> Display for RivenLookupError<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let err = format!("RivenLookupError: {}", match self {
-            RivenLookupError::InvalidItemType(itype) => format!("Could not find weapon type: {}", itype),
-            RivenLookupError::InvalidAttribute(iattr) => format!("Could not find attribute type: {}", iattr),
-            RivenLookupError::UnitsLookupError(uerror) => format!("UnitsLookupError: {}", uerror),
-            RivenLookupError::InvalidField(field) => format!("InvalidField: {}", match field {
-                RivenLookupField::RivenAttributes => "RivenAttributes",
-                RivenLookupField::UniqueName => "UniqueName",
-                RivenLookupField::ModifierTag => "ModifierTag",
-                RivenLookupField::Upgrades => "Upgrades",
-                RivenLookupField::WfmUrl => "WfmUrl",
-                RivenLookupField::PrefixTag => "PrefixTag",
-                RivenLookupField::SuffixTag => "SuffixTag",
-                RivenLookupField::BaseValue => "BaseValue",
-            }),
-        });
+        let err = format!(
+            "RivenLookupError: {}",
+            match self {
+                RivenLookupError::InvalidItemType(itype) =>
+                    format!("Could not find weapon type: {}", itype),
+                RivenLookupError::InvalidAttribute(iattr) =>
+                    format!("Could not find attribute type: {}", iattr),
+                RivenLookupError::UnitsLookupError(uerror) =>
+                    format!("UnitsLookupError: {}", uerror),
+                RivenLookupError::InvalidField(field) => format!(
+                    "InvalidField: {}",
+                    match field {
+                        RivenLookupField::RivenAttributes => "RivenAttributes",
+                        RivenLookupField::UniqueName => "UniqueName",
+                        RivenLookupField::ModifierTag => "ModifierTag",
+                        RivenLookupField::Upgrades => "Upgrades",
+                        RivenLookupField::WfmUrl => "WfmUrl",
+                        RivenLookupField::PrefixTag => "PrefixTag",
+                        RivenLookupField::SuffixTag => "SuffixTag",
+                        RivenLookupField::BaseValue => "BaseValue",
+                    }
+                ),
+            }
+        );
 
         f.write_str(err.as_str())
     }
 }
 
-impl Error for RivenLookupError {}
+impl<'a> Error for RivenLookupError<'a> {}
 
 #[derive(Debug)]
 enum RivenLookupField {
@@ -365,8 +444,8 @@ enum Units {
 #[derive(Debug)]
 enum UnitsLookupError {
     InvalidField(UnitsLookupField),
-    InvalidAttribute(Arc<str>),
-    InvalidUnits(Arc<str>)
+    InvalidAttribute(Rc<str>),
+    InvalidUnits(Rc<str>),
 }
 
 #[derive(Debug)]
@@ -398,23 +477,26 @@ impl Display for UnitsLookupField {
     }
 }
 
-fn lookup_units(
-    lookup: &RivenDataLookup,
-    wfm_url: Arc<str>
-) -> Result<Units, UnitsLookupError> {
+fn lookup_units<'a>(lookup: &'a RivenDataLookup, wfm_url: &'a str) -> Result<Units, UnitsLookupError> {
     if lookup.available_attributes.is_none() {
-        return Err(UnitsLookupError::InvalidField(UnitsLookupField::AvailableAttributes))
+        return Err(UnitsLookupError::InvalidField(
+            UnitsLookupField::AvailableAttributes,
+        ));
     }
     let available_attributes = lookup.available_attributes.as_ref().unwrap();
-    if available_attributes.iter().find(|attr| attr.url_name.is_none()).is_some() {
-        return Err(UnitsLookupError::InvalidField(UnitsLookupField::UrlName))
+    if available_attributes
+        .iter()
+        .find(|attr| attr.url_name.is_none())
+        .is_some()
+    {
+        return Err(UnitsLookupError::InvalidField(UnitsLookupField::UrlName));
     }
 
-    let attr = available_attributes.iter().find(|&attr| {
-        attr.url_name.clone() == Some(wfm_url.clone())
-    });
+    let attr = available_attributes
+        .iter()
+        .find(|&attr| attr.url_name.clone() == Some(wfm_url.into()));
     if attr.is_none() {
-        return Err(UnitsLookupError::InvalidAttribute(wfm_url));
+        return Err(UnitsLookupError::InvalidAttribute(wfm_url.into()));
     }
     let attr = attr.unwrap();
     match attr.units.clone() {
@@ -422,69 +504,92 @@ fn lookup_units(
             "percent" => Ok(Units::Percent),
             "multiply" => Ok(Units::Multiply),
             "seconds" => Ok(Units::Seconds),
-            _ => Err(UnitsLookupError::InvalidUnits(unit))
+            _ => Err(UnitsLookupError::InvalidUnits(unit)),
         },
         None => Ok(Units::Null),
     }
 }
 
-fn lookup_riven_data(
-    lookup: &RivenDataLookup,
-    weapon_type: Rc<str>,
-    rattrs: Vec<RawAttributes>
-) -> Result<Vec<AttributeInfo>, RivenLookupError> {
+fn lookup_riven_data<'a>(
+    lookup: &'a RivenDataLookup,
+    weapon_type: &'a str,
+    rattrs: Vec<RawAttributes<'a>>,
+) -> Result<Vec<AttributeInfo>, RivenLookupError<'a>> {
     if lookup.rivens_attributes.is_none() {
-        return Err(RivenLookupError::InvalidField(RivenLookupField::RivenAttributes))
+        return Err(RivenLookupError::InvalidField(
+            RivenLookupField::RivenAttributes,
+        ));
     }
     let riven_attributes = lookup.rivens_attributes.as_ref().unwrap();
-    if riven_attributes.iter().find(|&attr| attr.unique_name.is_none()).is_some() {
-        return Err(RivenLookupError::InvalidField(RivenLookupField::UniqueName))
+    if riven_attributes
+        .iter()
+        .find(|&attr| attr.unique_name.is_none())
+        .is_some()
+    {
+        return Err(RivenLookupError::InvalidField(RivenLookupField::UniqueName));
     }
-    let attrs = match riven_attributes.iter().find(|&attr| attr.unique_name.clone().unwrap() == weapon_type.deref().into()) {
+    let attrs = match riven_attributes
+        .iter()
+        .find(|&attr| attr.unique_name.clone() == Some(weapon_type.into()))
+    {
         Some(v) => v,
         None => return Err(RivenLookupError::InvalidItemType(weapon_type.into())),
     };
     if attrs.upgrades.is_none() {
-        return Err(RivenLookupError::InvalidField(RivenLookupField::RivenAttributes))
+        return Err(RivenLookupError::InvalidField(
+            RivenLookupField::RivenAttributes,
+        ));
     }
     let upgrades = attrs.upgrades.as_ref().unwrap();
-    if upgrades.iter().find(|&upgr| upgr.modifier_tag.is_none()).is_some() {
-        return Err(RivenLookupError::InvalidField(RivenLookupField::ModifierTag))
+    if upgrades
+        .iter()
+        .find(|&upgr| upgr.modifier_tag.is_none())
+        .is_some()
+    {
+        return Err(RivenLookupError::InvalidField(
+            RivenLookupField::ModifierTag,
+        ));
     }
     let mut attr_info: Vec<AttributeInfo> = Vec::with_capacity(2);
-    rattrs.iter().try_for_each(|rattr: &RawAttributes| -> Result<(), RivenLookupError> {
-        let upgrade = match upgrades.iter().find(|&upgr| upgr.modifier_tag.clone().unwrap() == rattr.tag.deref().into()) {
-            Some(v) => v,
-            None => return Err(RivenLookupError::InvalidAttribute(rattr.tag.clone())),
-        };
-        let wfm_url = match upgrade.wfm_url.clone() {
-            Some(v) => v,
-            None => return Err(RivenLookupError::InvalidField(RivenLookupField::WfmUrl)),
-        };
-        let prefix = match upgrade.prefix.clone() {
-            Some(v) => v,
-            None => return Err(RivenLookupError::InvalidField(RivenLookupField::PrefixTag)),
-        };
-        let suffix = match upgrade.suffix.clone() {
-            Some(v) => v,
-            None => return Err(RivenLookupError::InvalidField(RivenLookupField::SuffixTag)),
-        };
-        let base_value = match upgrade.value.clone() {
-            Some(v) => v,
-            None => return Err(RivenLookupError::InvalidField(RivenLookupField::BaseValue)),
-        };
-        let units = lookup_units(lookup, wfm_url.clone()).map_err(|e| RivenLookupError::UnitsLookupError(e))?;
-        attr_info.push(AttributeInfo {
-            positive: rattr.positive,
-            value: rattr.value,
-            wfm_url: wfm_url.clone(),
-            prefix: prefix.clone(),
-            suffix: suffix.clone(),
-            base_value,
-            units,
-        });
-        Ok(())
-    })?;
+    rattrs
+        .iter()
+        .try_for_each(|rattr: &RawAttributes| -> Result<(), RivenLookupError> {
+            let upgrade = match upgrades
+                .iter()
+                .find(|&upgr| upgr.modifier_tag == Some(rattr.tag.into()))
+            {
+                Some(v) => v,
+                None => return Err(RivenLookupError::InvalidAttribute(rattr.tag.clone())),
+            };
+            let wfm_url = match upgrade.wfm_url.clone() {
+                Some(v) => v,
+                None => return Err(RivenLookupError::InvalidField(RivenLookupField::WfmUrl)),
+            };
+            let prefix = match upgrade.prefix.clone() {
+                Some(v) => v,
+                None => return Err(RivenLookupError::InvalidField(RivenLookupField::PrefixTag)),
+            };
+            let suffix = match upgrade.suffix.clone() {
+                Some(v) => v,
+                None => return Err(RivenLookupError::InvalidField(RivenLookupField::SuffixTag)),
+            };
+            let base_value = match upgrade.value.clone() {
+                Some(v) => v,
+                None => return Err(RivenLookupError::InvalidField(RivenLookupField::BaseValue)),
+            };
+            let units = lookup_units(lookup, &wfm_url)
+                .map_err(|e| RivenLookupError::UnitsLookupError(e))?;
+            attr_info.push(AttributeInfo {
+                positive: rattr.positive,
+                value: rattr.value,
+                wfm_url: wfm_url.clone(),
+                prefix: prefix.clone(),
+                suffix: suffix.clone(),
+                base_value,
+                units,
+            });
+            Ok(())
+        })?;
     Ok(attr_info)
 }
 

@@ -6,7 +6,6 @@ use std::{
 
 use futures::lock::Mutex;
 use http::{Method, StatusCode};
-use serde_json::{from_value, json};
 
 use crate::{
     http_client::client::StatusError, jwt::jwt_is_valid, rate_limiter::RateLimiter, rivens::inventory::convert_raw_inventory::Auction, AppError
@@ -21,7 +20,7 @@ pub struct WFMClient {
     pub auth: Arc<Mutex<AuthState>>,
 }
 
-impl HttpClient for WFMClient {}
+impl<'a> HttpClient<'a> for WFMClient {}
 
 impl WFMClient {
     pub fn new(auth: Arc<Mutex<AuthState>>) -> Self {
@@ -33,10 +32,7 @@ impl WFMClient {
     }
 
     pub async fn login(&self, email: &str, password: &str) -> Result<StatusCode, AppError> {
-        let body = json!({
-        "email": email,
-        "password": password,
-        });
+        let body = serde_json::json!({"email": email, "password": password});
         let auth = self.auth.lock().await;
         let auth = auth.deref();
         let mut rate_limiter = self.limiter.lock().await;
@@ -65,7 +61,8 @@ impl WFMClient {
         if response.status == StatusCode::OK {
             if let Some(v) = val {
                 let data = v["payload"]["user"].clone();
-                user = serde_json::from_value(data).map_err(|e| {
+                let data = data.to_string();
+                user = serde_json::from_str(data.as_str()).map_err(|e| {
                     AppError::new(
                         e.to_string(),
                         String::from("login: from_value::<AuthState>"),
@@ -109,18 +106,14 @@ impl WFMClient {
         let mut is_valid = false;
         if let Some(body) = body {
             let value = body["profile"].clone();
-            let anonymous = from_value::<bool>(value["anonymous"].clone()).map_err(|e| {
-                AppError::new(
-                    e.to_string(),
-                    String::from("validate: from_value(anonymous)"),
-                )
-            })?;
-            let verification = from_value::<bool>(value["verification"].clone()).map_err(|e| {
-                AppError::new(
-                    e.to_string(),
-                    String::from("validate: from_value(verification)"),
-                )
-            })?;
+            let anonymous = match value["anonymous"].as_bool() {
+                Some(v) => v,
+                None => return Err(AppError::new(String::from("failed to deserialize json value: anonymous"), String::from("validate: .as_bool()"))),
+            };
+            let verification = match value["verification"].as_bool() {
+                Some(v) => v,
+                None => return Err(AppError::new(String::from("failed to deserialize json value: verification"), String::from("validate: .as_bool()"))),
+            };
             if anonymous || !verification {
                 is_valid = false;
             } else {
@@ -160,10 +153,11 @@ impl WFMClient {
         match body_value {
             Some(v) => {
                 let data = v["payload"]["auctions"].clone();
-                serde_json::from_value::<Vec<Auction>>(data).map_err(|e| {
+                let data = data.to_string();
+                serde_json::from_str::<Vec<Auction>>(data.as_str()).map_err(|e| {
                     AppError::new(
                         e.to_string(),
-                        String::from("get_all_rivens: from_value::<Vec<Auction>>"),
+                        String::from("get_all_rivens: from_str::<Vec<Auction>>"),
                     )
                 })
             }

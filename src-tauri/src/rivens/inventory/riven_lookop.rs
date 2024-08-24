@@ -1,4 +1,4 @@
-use std::{ops::{Deref, DerefMut}, sync::Arc};
+use std::{ops::{Deref, DerefMut}, rc::Rc, sync::Arc};
 
 use futures::lock::Mutex;
 use http::Method;
@@ -15,31 +15,31 @@ pub struct RivenDataLookup {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Weapon {
-    pub wfm_url_name: Option<Arc<str>>,
-    pub unique_name: Option<Arc<str>>,
+    pub wfm_url_name: Option<Rc<str>>,
+    pub unique_name: Option<Rc<str>>,
     pub disposition: Option<f64>,
-    pub upgrade_type: Option<Arc<str>>
+    pub upgrade_type: Option<Rc<str>>
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RivensAttribute {
-    pub unique_name: Option<Arc<str>>,
+    pub unique_name: Option<Rc<str>>,
     pub upgrades: Option<Vec<Upgrade>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Upgrade {
-    pub wfm_url: Option<Arc<str>>,
-    pub modifier_tag: Option<Arc<str>>,
-    pub prefix: Option<Arc<str>>,
-    pub suffix: Option<Arc<str>>,
+    pub wfm_url: Option<Rc<str>>,
+    pub modifier_tag: Option<Rc<str>>,
+    pub prefix: Option<Rc<str>>,
+    pub suffix: Option<Rc<str>>,
     pub value: Option<f64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AvailableAttribute {
-    pub units: Option<Arc<str>>,
-    pub url_name: Option<Arc<str>>,
+    pub units: Option<Rc<str>>,
+    pub url_name: Option<Rc<str>>,
 }
 
 impl Default for RivenDataLookup {
@@ -58,7 +58,7 @@ impl RivenDataLookup {
         let qf = qf.deref();
         let mut rate_limiter = qf.limiter.lock().await;
         let rate_limiter = rate_limiter.deref_mut();
-        let (body_value, _) =match qf.send_request(
+        let (body_value, _) = match qf.send_request(
             Method::GET,
             qf.endpoint.as_str(),
             rate_limiter,
@@ -70,17 +70,16 @@ impl RivenDataLookup {
                 e.prop("setup".into())
             )
         };
-        let new_data: Self = match body_value {
-            Some(v) => serde_json::from_value(v).map_err(|e| AppError::new(
-                e.to_string(),
-                String::from("QFClient::setup: from_value::<RivenDataLookup>")
-            ))?,
-            None => return Err(AppError::new(
+        if body_value.is_none() {
+            return Err(AppError::new(
                 String::from("No response body associated with response"),
                 String::from("QFClient::setup")
             ))
-        };
+        }
+        let new_data: Self = serde_json::from_value(body_value.unwrap()).map_err(|e| AppError::new(
+                    e.to_string(),
+                    String::from("QFClient::setup: from_value::<RivenDataLookup>")
+                ))?;
         Ok(new_data)
     }
 }
-
