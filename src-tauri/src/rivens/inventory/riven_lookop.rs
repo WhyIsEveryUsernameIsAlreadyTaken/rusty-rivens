@@ -1,10 +1,9 @@
 use std::{ops::{Deref, DerefMut}, rc::Rc, sync::Arc};
 
 use futures::lock::Mutex;
-use http::Method;
 use serde::{Deserialize, Serialize};
 
-use crate::{http_client::{client::HttpClient, qf_client::QFClient}, AppError};
+use crate::{http_client::{client::{HttpClient, Method}, qf_client::QFClient}, AppError};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RivenDataLookup {

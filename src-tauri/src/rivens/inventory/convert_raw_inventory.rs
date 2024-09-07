@@ -3,7 +3,6 @@ use std::{cmp::Ordering, error::Error, fmt::Display, ops::Deref, rc::Rc, sync::A
 use super::riven_lookop::RivenDataLookup;
 use futures::lock::Mutex;
 use serde::{Deserialize, Serialize};
-use time::OffsetDateTime;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Upgrades {
@@ -52,33 +51,6 @@ pub struct Curses {
     pub value: i32,
 }
 
-// TODO: need to refactor this to not have everything be public, and refactor
-// other places to have better controlled access to this struct
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Auction {
-    pub starting_price: Option<u32>,
-    pub buyout_price: Option<u32>,
-    pub owner: Option<String>,
-    #[serde(with = "time::serde::rfc3339::option")]
-    pub updated: Option<OffsetDateTime>,
-    pub is_direct_sell: bool,
-    pub id: Option<String>,
-    pub oid: String,
-}
-
-impl Default for Auction {
-    fn default() -> Self {
-        Self {
-            starting_price: None,
-            buyout_price: None,
-            owner: None,
-            updated: None,
-            is_direct_sell: true,
-            id: None,
-            oid: String::new(),
-        }
-    }
-}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Item {

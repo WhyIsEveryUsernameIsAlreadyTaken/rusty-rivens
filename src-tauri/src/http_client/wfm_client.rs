@@ -5,13 +5,12 @@ use std::{
 };
 
 use futures::lock::Mutex;
-use http::{Method, StatusCode};
 
 use crate::{
-    http_client::client::StatusError, jwt::jwt_is_valid, rate_limiter::RateLimiter, rivens::inventory::convert_raw_inventory::Auction, AppError
+    http_client::client::StatusError, jwt::jwt_is_valid, rate_limiter::RateLimiter, rivens::inventory::database::Auction, AppError
 };
 
-use super::{auth_state::AuthState, client::HttpClient};
+use super::{auth_state::AuthState, client::{HttpClient, Method, Status}};
 
 #[derive(Clone, Debug)]
 pub struct WFMClient {
@@ -31,7 +30,7 @@ impl WFMClient {
         }
     }
 
-    pub async fn login(&self, email: &str, password: &str) -> Result<StatusCode, AppError> {
+    pub async fn login(&self, email: &str, password: &str) -> Result<Status, AppError> {
         let body = serde_json::json!({"email": email, "password": password});
         let auth = self.auth.lock().await;
         let auth = auth.deref();
@@ -50,15 +49,13 @@ impl WFMClient {
         let (val, headers) = response.res;
         let token: Option<Arc<str>>;
         if let Some(cookie_header) = headers.get("set-cookie") {
-            let cookies = cookie_header
-                .to_str()
-                .map_err(|e| AppError::new(e.to_string(), String::from("login: ")))?;
+            let cookies = cookie_header;
             token = Some(cookies[4..].split_once(';').unwrap_or(("", "")).0.into());
         } else {
             panic!("No access token returned!");
         };
         let mut user = AuthState::default();
-        if response.status == StatusCode::OK {
+        if response.status.code < 300 {
             if let Some(v) = val {
                 let data = v["payload"]["user"].clone();
                 let data = data.to_string();
@@ -139,8 +136,8 @@ impl WFMClient {
             None,
         ).await {
             Ok(v) => {
-                println!("{} {}: {}", method, url, v.status);
-                if v.status != StatusCode::OK {
+                println!("{} {}: {:?}", method, url, v.status);
+                if v.status.code < 300 {
                     return Err(AppError::new(
                         StatusError { status: v.status }.to_string(),
                         String::from("get_all_rivens: "),

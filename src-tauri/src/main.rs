@@ -1,7 +1,6 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 use futures::lock::Mutex;
-use http::StatusCode;
 use rivens::inventory::{database::InventoryDB, riven_lookop::RivenDataLookup};
 use serde::{ser::SerializeStruct, Deserialize, Serialize};
 use std::{
@@ -15,7 +14,7 @@ use tauri::{
     App,
     Manager,
 };
-use http_client::{auth_state::AuthState, qf_client::QFClient, wfm_client::WFMClient};
+use http_client::{auth_state::AuthState, client::Status, qf_client::QFClient, wfm_client::WFMClient};
 mod jwt;
 mod rate_limiter;
 mod riven_data_store;
@@ -77,9 +76,9 @@ async fn get_auth_state(
 
 #[derive(Serialize, Deserialize)]
 struct WrappedStatus {
-    #[serde(with = "http_serde::status_code")]
-    status: StatusCode,
+    status: u16,
 }
+
 #[tauri::command]
 async fn login(
     email: &str,
@@ -94,7 +93,7 @@ async fn login(
         .await
         .map_err(|e| e.prop("Tauri CMD: login".into()))?;
     println!("");
-    Ok(WrappedStatus { status })
+    Ok(WrappedStatus { status: status.code })
 }
 #[tauri::command]
 fn reload_thing() -> bool {
@@ -112,10 +111,10 @@ async fn setup_app_state(app: &mut App) -> Result<(), AppError> {
     let qf_client = Arc::new(Mutex::new(QFClient::new()));
     app.manage(qf_client.clone());
 
-    let riven_lookup = Arc::new(Mutex::new(RivenDataLookup::setup(qf_client.clone())));
-    app.manage(riven_lookup.clone());
+    let riven_lookup = RivenDataLookup::setup(qf_client.clone());
+    app.manage(riven_lookup);
 
-    let database = InventoryDB::open().map_err(|e| AppError::new(e.to_string(), String::from("setup_app_state")));
+    let database = InventoryDB::open().map_err(|e| AppError::new(e.to_string(), String::from("setup_app_state")))?;
     let database = Arc::new(Mutex::new(database));
     app.manage(database.clone());
     Ok(())

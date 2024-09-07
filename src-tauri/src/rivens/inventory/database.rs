@@ -1,11 +1,41 @@
 use std::rc::Rc;
 
 use rusqlite::{params, Connection};
+use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 
-use super::convert_raw_inventory::{Attribute, Auction, Item};
+use super::convert_raw_inventory::{Attribute, Item};
 
 pub struct InventoryDB {
     connection: Connection,
+}
+
+// TODO: need to refactor this to not have everything be public, and refactor
+// other places to have better controlled access to this struct
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub(crate) struct Auction {
+    pub(super) starting_price: Option<u32>,
+    pub(super) buyout_price: Option<u32>,
+    pub(super) owner: Option<String>,
+    #[serde(with = "time::serde::rfc3339::option")]
+    pub(super) updated: Option<OffsetDateTime>,
+    pub(super) is_direct_sell: bool,
+    pub(super) id: Option<String>,
+    pub(super) oid: String,
+}
+
+impl Default for Auction {
+    fn default() -> Self {
+        Self {
+            starting_price: None,
+            buyout_price: None,
+            owner: None,
+            updated: None,
+            is_direct_sell: true,
+            id: None,
+            oid: String::new(),
+        }
+    }
 }
 
 static SQL_TABLE_ITEMS: &str = "CREATE TABLE IF NOT EXISTS items ( item_id text primary key, mastery_level integer, name text, polarity text, weapon_url_name text, re_rolls integer, mod_rank integer)";
@@ -71,7 +101,7 @@ impl InventoryDB {
         })
     }
 
-    pub(super) fn insert_items(&mut self, items: Vec<Item>) -> Result<(), rusqlite::Error> {
+    pub(super) fn insert_items(&mut self, items: &Vec<Item>) -> Result<(), rusqlite::Error> {
         let tx = self.connection.transaction()?;
         let mut item_insert = tx.prepare(SQL_ITEM_INSERT)?;
 
@@ -117,7 +147,7 @@ impl InventoryDB {
         Ok(items)
     }
 
-    pub(super) fn select_attributes(&self, oid: Rc<str>) -> Result<Vec<Attribute>, rusqlite::Error> {
+    fn select_attributes(&self, oid: Rc<str>) -> Result<Vec<Attribute>, rusqlite::Error> {
         let mut attributes_select = self.connection.prepare(SQL_SELECT_ATTRIBUTES)?;
         let attributes = attributes_select.query_map(&[&oid], |row| {
             Ok(Attribute {
@@ -132,9 +162,9 @@ impl InventoryDB {
         Ok(attributes)
     }
 
-    pub(super) fn select_auctions(&self, oid: Rc<str>) -> Result<Vec<Auction>, rusqlite::Error> {
+    pub(super) fn select_auction(&self, oid: Rc<str>) -> Result<Auction, rusqlite::Error> {
         let mut auctions_select = self.connection.prepare(SQL_SELECT_AUCTIONS)?;
-        let aucs = auctions_select.query_map(&[&oid], |row| {
+        let auc = auctions_select.query_row(&[&oid], |row| {
             Ok(Auction {
                 starting_price: row.get("starting_price")?,
                 buyout_price: row.get("buyout_price")?,
@@ -144,12 +174,8 @@ impl InventoryDB {
                 id: row.get("id")?,
                 oid: row.get("item_id")?
             })
-        })?.try_fold(vec![], |mut acc, attr| -> Result<Vec<Auction>, rusqlite::Error> {
-
-                acc.push(attr?);
-                Ok(acc)
-            })?;
-        Ok(aucs)
+        })?;
+        Ok(auc)
     }
 }
 
@@ -160,12 +186,19 @@ mod tests {
 
     use dotenv::dotenv;
     use futures::lock::Mutex;
-    use http::Method;
     use rand::random;
     use serde_json::from_str;
     use time::Duration as LibDuration;
 
-    use crate::{http_client::{client::HttpClient, qf_client::QFClient}, rate_limiter::RateLimiter, rivens::inventory::{convert_raw_inventory::{convert_inventory_data, Auction}, raw_inventory::decrypt_last_data, riven_lookop::RivenDataLookup, database::InventoryDB}};
+    use crate::{http_client::{
+        client::{HttpClient, Method},
+        qf_client::QFClient
+        },
+        rate_limiter::RateLimiter,
+        rivens::inventory::{
+            convert_raw_inventory::convert_inventory_data, database::Auction, raw_inventory::decrypt_last_data, riven_lookop::RivenDataLookup
+        }
+    };
 
     #[tokio::test]
     async fn test_insert_data() {
