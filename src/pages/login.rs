@@ -1,149 +1,104 @@
-use ev::SubmitEvent;
-use http::StatusCode;
-use leptos::*;
-use leptos_router::{use_navigate, NavigateOptions};
-use serde::{Deserialize, Serialize};
-use tauri_sys::core::invoke_result;
-use wasm_bindgen_futures::spawn_local;
+use std::{
+    io::Cursor,
+    ops::{Deref, DerefMut},
+    rc::Rc,
+    sync::Arc,
+};
 
-use crate::{AppError, EmptyArgs};
+use ascii::AsciiString;
+use async_lock::Mutex;
+use maud::html;
+use serde::Deserialize;
+use tiny_http::{Header, Response, StatusCode};
 
-#[derive(Serialize, Deserialize)]
-struct LoginArgs<'a> {
-    email: &'a str,
-    password: &'a str,
+use crate::{http_client::wfm_client::WFMClient, server::LOGGED_IN, AppError};
+
+#[derive(Deserialize, Debug)]
+struct Login {
+    email: Arc<str>,
+    password: Arc<str>,
 }
 
-#[derive(Serialize, Deserialize)]
-struct WrappedStatus {
-    #[serde(with = "http_serde::status_code")]
-    status: StatusCode
-}
-
-#[component]
-pub fn Login() -> impl IntoView {
-    let (email, set_email) = create_signal(String::new());
-    let (password, set_password) = create_signal(String::new());
-    let (login_failed, set_login_failed) = create_signal(String::new());
-
-    let (errors, set_errors) = create_signal(Vec::<String>::new());
-
-    let update_email = move |ev| {
-        let v = event_target_value(&ev);
-        set_email.set(v);
-    };
-    let update_password = move |ev| {
-        let v = event_target_value(&ev);
-        set_password.set(v);
-    };
-    let (logged_in, set_logged_in) = create_signal(false);
-    let (prefetch_auth, set_prefetch_auth) = create_signal(false);
-
-    spawn_local(async move {
-        let resp = invoke_result::<bool, AppError>("get_auth_state", &EmptyArgs).await;
-        match resp {
-            Ok(v) => {
-                set_logged_in.set(v);
-                if v {
-                    let navigate = use_navigate();
-                    let mut nav_opts = NavigateOptions::default();
-                    nav_opts.replace=true;
-                    navigate("/home", nav_opts);
-                }
-                set_prefetch_auth.set(true)
-            },
-            Err(err) => {set_errors.update(|v| v.push(err.to_string()))}
-        }
-    });
-
-    let login = move |ev: SubmitEvent| {
-        ev.prevent_default();
-        spawn_local(async move {
-            let email = email.get_untracked();
-            let password = password.get_untracked();
-            if email.is_empty() || password.is_empty() {
-                return;
+pub fn uri_login() -> Response<Cursor<Vec<u8>>> {
+    let pagecontent = html! {
+        div hx-trigger="LoginSuccess from:body" hx-swap="outerHTML" hx-get="/home" {
+            div class="row" {
+                img src="/logo.svg" class="logo";
             }
-
-            let args = &LoginArgs { email: &email, password: &password };
-            let resp = invoke_result::<WrappedStatus, AppError>("login", &args).await;
-            let login_result = match resp {
-                Ok(v) => {
-                    v.status == StatusCode::OK
-                },
-                Err(err) => {set_errors.update(|v| v.push(err.to_string())); false}
-            };
-            if !login_result {
-                set_login_failed.set(String::from("Rety Login"));
-            } else {
-                if !logged_in.get_untracked() {
-                    set_logged_in.set(true);
-                    let navigate = use_navigate();
-                    let mut nav_opts = NavigateOptions::default();
-                    nav_opts.replace=true;
-                    navigate("/home", nav_opts);
-                }
-            }
-        });
-    };
-    logging::log!("Number of errors: {}", errors.get_untracked().len());
-    view! {
-    <div class="container">
-        <Show when=move || { errors.get().len() == 0 }
-            fallback=move || view! {
-                <div class="error" style="color: red;">
-                    <h2>"Panic during login!"</h2>
-                    <ul> {
-                    move || errors.get()
-                        .into_iter()
-                        .map(|e| view! {
-                            <li>{e.to_string()}</li>
-                        })
-                        .collect::<Vec<_>>()
+            div class="container" {
+                form hx-put="/api/login" hx-target="#login_failed" {
+                    div class="row" {
+                        input
+                            id="email-input"
+                            type="email"
+                            name="email"
+                            placeholder="Email";
                     }
-                    </ul>
-                </div>
-            }>
-            <div class="row">
-                <a href="https://tauri.app" target="_blank">
-                    <img src="public/tauri.svg" class="logo tauri" alt="Tauri logo"/>
-                </a>
-                <a href="https://docs.rs/leptos/" target="_blank">
-                    <img src="public/leptos.svg" class="logo leptos" alt="Leptos logo"/>
-                </a>
-            </div>
-
-            <p style="text-align: center">"Click on the Tauri and Leptos logos to learn more."</p>
-
-            <p style="text-align: center; color: red;"><b>{move || login_failed.get()}</b></p>
-
-            <Show
-            when=move || { prefetch_auth.get() }
-                fallback=|| view! { }
-            >
-                    <form on:submit=login>
-                        <div class="row">
-                            <input
-                                id="email-input"
-                                type="email"
-                                placeholder="Email"
-                                on:input=update_email
-                            />
-                        </div>
-                        <div class="row">
-                            <input
+                        div class="row" {
+                            input
                                 id="password-input"
                                 type="password"
-                                placeholder="Password"
-                                on:input=update_password
-                            />
-                        </div>
-                        <div class="row">
-                            <button type="submit">"Login"</button>
-                        </div>
-                    </form>
-            </Show>
-        </Show>
-    </div>
+                                name="password"
+                                placeholder="Password";
+                        }
+                        div class="row" {
+                            button type="submit" {"Login"}
+                        }
+                }
+                p id="login_failed" style="text-align: center; color: red;" {b {""}}
+            }
+        }
+    };
+    tiny_http::Response::from_string(pagecontent.into_string()).with_header(tiny_http::Header {
+        field: "Content-Type".parse().unwrap(),
+        value: AsciiString::from_ascii("text/html; charset=utf8").unwrap(),
+    })
+}
+
+// fn get_auth_state(
+//     wfm: WFMClient,
+// ) -> Result<bool, AppError> {
+//     wfm.validate()
+//         .map_err(|e| e.prop("Tauri CMD: get_auth_state".into()))
+// }
+
+pub fn uri_login_req(
+    body: &str,
+    wfm: Arc<Mutex<WFMClient>>,
+) -> Result<Response<Cursor<Vec<u8>>>, AppError> {
+    let (email, password) = {
+        let log =
+            serde_urlencoded::from_str::<Login>(body).expect("bruh this aint urlencoded tf u doin");
+        (log.email, log.password)
+    };
+
+    let status = smolscale::block_on(async move {
+        let mut wfm = wfm.lock().await;
+        let wfm = wfm.deref_mut();
+        wfm.login(&email, &password).await
+    }).map_err(|e| e.prop("uri_login_req".into()))?;
+
+    // for testing
+    let authorized = status.code == 200;
+
+    let pagecontent = if !authorized {
+        html! {p id="login_failed" style="text-align: center; color: red;" {b {"Login Failed, Please try again"}}}
+    } else {
+        LOGGED_IN.set(authorized).unwrap();
+        html! {"sdjfhsdjfh"}
+    };
+    let r = tiny_http::Response::from_string(pagecontent.into_string()).with_header(
+        tiny_http::Header {
+            field: "Content-Type".parse().unwrap(),
+            value: AsciiString::from_ascii("text/html; charset=utf8").unwrap(),
+        },
+    );
+    if authorized {
+        Ok(r.with_header(tiny_http::Header {
+            field: "HX-Trigger".parse().unwrap(),
+            value: AsciiString::from_ascii("LoginSuccess").unwrap(),
+        }))
+    } else {
+        Ok(r)
     }
 }

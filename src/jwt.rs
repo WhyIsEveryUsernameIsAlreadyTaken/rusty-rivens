@@ -55,7 +55,7 @@ fn validate_jwt(
 #[cfg(test)]
 mod tests {
 
-    use ::time::OffsetDateTime;
+    use time::OffsetDateTime;
     use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 
     use crate::jwt::{validate_jwt, Claims};

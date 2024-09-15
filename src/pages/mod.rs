@@ -1,2 +1,2 @@
-pub mod login;
-pub mod home;
+pub(crate) mod home;
+pub(crate) mod login;

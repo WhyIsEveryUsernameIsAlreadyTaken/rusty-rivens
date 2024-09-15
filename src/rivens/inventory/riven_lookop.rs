@@ -14,31 +14,31 @@ pub struct RivenDataLookup {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Weapon {
-    pub wfm_url_name: Option<Rc<str>>,
-    pub unique_name: Option<Rc<str>>,
+    pub wfm_url_name: Option<Arc<str>>,
+    pub unique_name: Option<Arc<str>>,
     pub disposition: Option<f64>,
-    pub upgrade_type: Option<Rc<str>>
+    pub upgrade_type: Option<Arc<str>>
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RivensAttribute {
-    pub unique_name: Option<Rc<str>>,
+    pub unique_name: Option<Arc<str>>,
     pub upgrades: Option<Vec<Upgrade>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Upgrade {
-    pub wfm_url: Option<Rc<str>>,
-    pub modifier_tag: Option<Rc<str>>,
-    pub prefix: Option<Rc<str>>,
-    pub suffix: Option<Rc<str>>,
+    pub wfm_url: Option<Arc<str>>,
+    pub modifier_tag: Option<Arc<str>>,
+    pub prefix: Option<Arc<str>>,
+    pub suffix: Option<Arc<str>>,
     pub value: Option<f64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AvailableAttribute {
-    pub units: Option<Rc<str>>,
-    pub url_name: Option<Rc<str>>,
+    pub units: Option<Arc<str>>,
+    pub url_name: Option<Arc<str>>,
 }
 
 impl Default for RivenDataLookup {

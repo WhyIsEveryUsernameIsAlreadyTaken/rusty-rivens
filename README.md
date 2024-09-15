@@ -1,21 +1,8 @@
-`sudo pacman -S --needed \
-  webkit2gtk-4.1 \
-  base-devel \
-  curl \
-  wget \
-  file \
-  openssl \
-  appmenu-gtk-module \
-  libappindicator-gtk3 \
-  librsvg`
+`cargo run`
 
-`cargo install tauri-cli --version "^2.0.0-beta"`
+# HTMX + WebKit2GTK
 
-`cargo tauri dev`
-
-# Tauri + Leptos
-
-causing the pain of yavascript with none of the yavascript!
+finally im in control
 
 ## Recommended IDE Setup
 
