@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!-- Created with Inkscape (http://www.inkscape.org/) -->
+
+<svg
+   width="1896.6741mm"
+   height="305.05255mm"
+   viewBox="0 0 1896.6741 305.05255"
+   version="1.1"
+   id="svg1"
+   inkscape:export-filename="projects/raw_html_rendering/public/logo.svg"
+   inkscape:export-xdpi="96"
+   inkscape:export-ydpi="96"
+   inkscape:version="1.3.2 (091e20ef0f, 2023-11-25, custom)"
+   sodipodi:docname="drawing.svg"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg"
+   xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+   xmlns:cc="http://creativecommons.org/ns#"
+   xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <defs
+     id="defs1">
+    <rect
+       x="-111.16908"
+       y="17.578474"
+       width="6241.4062"
+       height="1207.3228"
+       id="rect2" />
+    <rect
+       x="14.754464"
+       y="23.880791"
+       width="7147.0059"
+       height="4032.2158"
+       id="rect1" />
+  </defs>
+  <sodipodi:namedview
+     id="base"
+     pagecolor="#ffffff"
+     bordercolor="#000000"
+     borderopacity="0"
+     inkscape:pageopacity="0.0"
+     inkscape:pageshadow="2"
+     inkscape:zoom="0.0875"
+     inkscape:cx="3628.5714"
+     inkscape:cy="2508.5714"
+     inkscape:document-units="mm"
+     inkscape:showpageshadow="2"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#d1d1d1"
+     inkscape:window-width="958"
+     inkscape:window-height="1055"
+     inkscape:window-x="2880"
+     inkscape:window-y="23"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg1" />
+  <metadata
+     id="metadata1">
+    <rdf:RDF>
+      <cc:Work
+         rdf:about="">
+        <dc:format>image/svg+xml</dc:format>
+        <dc:type
+           rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+      </cc:Work>
+    </rdf:RDF>
+  </metadata>
+  <text
+     xml:space="preserve"
+     transform="matrix(0.26458333,0,0,0.26458333,-12.725581,-112.39923)"
+     id="text1"
+     style="font-weight:600;font-size:192px;font-family:'URW Gothic';-inkscape-font-specification:'URW Gothic Semi-Bold';white-space:pre;shape-inside:url(#rect1);fill:#245a75;stroke-width:1.00157" />
+  <text
+     xml:space="preserve"
+     transform="matrix(0.30950851,0,0,0.30950851,11.958282,-46.708511)"
+     id="text2"
+     style="font-weight:600;font-size:1066.67px;font-family:'URW Gothic';-inkscape-font-specification:'URW Gothic Semi-Bold';white-space:pre;shape-inside:url(#rect2);fill:#245a75;stroke-width:1.00157"><tspan
+       x="-111.16992"
+       y="939.18104"
+       id="tspan4"><tspan
+         dx="0 0 0 0 0 0 0.00012207031 0 0 0 0.00030517578"
+         id="tspan2">Rusty Rivens</tspan></tspan></text>
+</svg>

@@ -1,7 +1,7 @@
 use std::{cmp::Ordering, error::Error, fmt::Display, ops::Deref, rc::Rc, sync::Arc};
 
 use super::riven_lookop::RivenDataLookup;
-use futures::lock::Mutex;
+use async_lock::Mutex;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -9,7 +9,7 @@ pub struct Upgrades {
     #[serde(alias = "UpgradeFingerprint")]
     pub upgrade_fingerprint: UpgradeFingerprint,
     #[serde(alias = "ItemType")]
-    pub item_type: Rc<str>,
+    pub item_type: Arc<str>,
     #[serde(alias = "ItemId")]
     pub item_id: ItemID,
 }
@@ -17,12 +17,12 @@ pub struct Upgrades {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ItemID {
     #[serde(alias = "$oid")]
-    pub oid: Rc<str>,
+    pub oid: Arc<str>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct UpgradeFingerprint {
-    pub compat: Option<Rc<str>>,
+    pub compat: Option<Arc<str>>,
     pub lim: i32,
     #[serde(alias = "lvlReq")]
     pub lvl_req: u8,
@@ -30,7 +30,7 @@ pub struct UpgradeFingerprint {
     pub lvl: u8,
     #[serde(default)]
     pub rerolls: i32,
-    pub pol: Rc<str>,
+    pub pol: Arc<str>,
     pub buffs: Vec<Buffs>,
     pub curses: Vec<Curses>,
 }
@@ -38,7 +38,7 @@ pub struct UpgradeFingerprint {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Buffs {
     #[serde(alias = "Tag")]
-    pub tag: Rc<str>,
+    pub tag: Arc<str>,
     #[serde(alias = "Value")]
     pub value: i32,
 }
@@ -46,7 +46,7 @@ pub struct Buffs {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Curses {
     #[serde(alias = "Tag")]
-    pub tag: Rc<str>,
+    pub tag: Arc<str>,
     #[serde(alias = "Value")]
     pub value: i32,
 }
@@ -55,14 +55,14 @@ pub struct Curses {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Item {
     pub mastery_level: u8,
-    pub name: Rc<str>,
-    pub polarity: Rc<str>,
+    pub name: Arc<str>,
+    pub polarity: Arc<str>,
     pub attributes: Vec<Attribute>,
-    pub weapon_url_name: Rc<str>,
+    pub weapon_url_name: Arc<str>,
     pub re_rolls: i32,
     pub mod_rank: u8,
     #[serde(default)]
-    pub oid: Rc<str>,
+    pub oid: Arc<str>,
 }
 
 impl Default for Item {
@@ -87,6 +87,7 @@ pub struct Attribute {
     pub url_name: String,
 }
 
+#[derive(Debug)]
 struct RawAttributes<'a> {
     positive: bool,
     tag: &'a str,
@@ -98,9 +99,9 @@ struct AttributeInfo {
     positive: bool,
     value: i32,
     units: Units,
-    wfm_url: Rc<str>,
-    prefix: Rc<str>,
-    suffix: Rc<str>,
+    wfm_url: Arc<str>,
+    prefix: Arc<str>,
+    suffix: Arc<str>,
     base_value: f64,
 }
 
@@ -119,11 +120,9 @@ impl Ord for AttributeInfo {
 }
 
 pub async fn convert_inventory_data(
-lookup: Arc<Mutex<RivenDataLookup>>,
+    lookup: &RivenDataLookup,
     upgrades: Vec<Upgrades>,
 ) -> Vec<Item> {
-    let lookup = lookup.lock().await;
-    let lookup = lookup.deref();
     let mut items: Vec<Item> = vec![];
     upgrades.iter().for_each(|upgrade| {
         let mut raw_attributes: Vec<RawAttributes> = vec![];
@@ -417,7 +416,7 @@ enum Units {
 enum UnitsLookupError {
     InvalidField(UnitsLookupField),
     InvalidAttribute(Rc<str>),
-    InvalidUnits(Rc<str>),
+    InvalidUnits(Arc<str>),
 }
 
 #[derive(Debug)]
@@ -567,25 +566,19 @@ fn lookup_riven_data<'a>(
 
 #[cfg(test)]
 mod tests {
-    // CAN ONLY BE TESTED WITH NIGHTLY && WITH TOKIO
-    // use std::{sync::Arc, time::Duration};
+    use std::{ops::DerefMut, sync::Arc};
 
-    // use futures::lock::Mutex;
-    // use http::Method;
-    // use serde_json::from_value;
+    use async_lock::Mutex;
+    use serde_json::from_value;
 
-    // use crate::{http_client::{client::HttpClient, qf_client::QFClient}, rate_limiter::RateLimiter, rivens::inventory::{raw_inventory::decrypt_last_data, riven_lookop::{self, RivenDataLookup}}};
+    use crate::{http_client::{client::{HttpClient, Method}, qf_client::QFClient}, rivens::inventory::{raw_inventory::decrypt_last_data, riven_lookop::RivenDataLookup}};
 
-    // use super::convert_inventory_data;
+    use super::convert_inventory_data;
 
-    // #[tokio::test]
-    // async fn test_convert_inventory_data() {
-    //     let qf = QFClient::new();
-    //     let mut limiter = RateLimiter::new(1.0, Duration::from_secs(1));
-    //     let (body, _) = qf.send_request(Method::GET, qf.endpoint.as_str(), &mut limiter, None, None).await.unwrap().res;
-    //     let lookup = Arc::new(Mutex::new(from_value::<RivenDataLookup>(body.unwrap()).unwrap()));
-    //     let raw_upgrades = decrypt_last_data().unwrap();
-    //     let items = convert_inventory_data(lookup, raw_upgrades).await;
-    //     // println!("{:#?}", items);
-    // }
+    async fn test_convert_inventory_data() {
+        let lookup = RivenDataLookup::setup().unwrap();
+        let raw_upgrades = decrypt_last_data(None).unwrap();
+        let _ = convert_inventory_data(&lookup, raw_upgrades).await;
+        // println!("{:#?}", items);
+    }
 }

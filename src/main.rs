@@ -13,6 +13,9 @@ mod resources;
 mod server;
 mod rate_limiter;
 mod jwt;
+mod file_consts;
+mod rivens;
+mod riven_data_store;
 mod http_client;
 
 static STOPPED: OnceCell<bool> = once_cell::sync::OnceCell::new();
@@ -29,18 +32,6 @@ impl Display for AppError {
     }
 }
 
-// impl Serialize for AppError {
-//     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-//     where
-//         S: serde::Serializer,
-//     {
-//         let mut state = serializer.serialize_struct("AppError", 2)?;
-//         state.serialize_field("location", &self.location.deref())?;
-//         state.serialize_field("err", &self.err.deref())?;
-//         state.end()
-//     }
-// }
-
 impl AppError {
     pub fn new(err: String, loc: String) -> Self {
         Self {
@@ -51,7 +42,7 @@ impl AppError {
     pub fn prop(&self, new_loc: Arc<str>) -> Self {
         let new_loc = new_loc.trim();
         Self {
-            location: format!("{}: {}", new_loc, self.location).into(),
+            location: format!("{}::{}", new_loc, self.location).into(),
             err: self.err.clone(),
         }
     }
@@ -91,5 +82,5 @@ fn main() {
 
     app.run();
     STOPPED.set(true).unwrap();
-    // server.join().unwrap();
+    server.join().unwrap();
 }

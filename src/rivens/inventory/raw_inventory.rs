@@ -1,4 +1,5 @@
-use std::{env::{self, VarError}, error::Error, fmt::Display, fs::File, io::{self, Read}, num::ParseIntError, ops::Deref, path::PathBuf, rc::Rc, string::FromUtf8Error};
+use core::str;
+use std::{env::{self, VarError}, error::Error, fmt::Display, fs::{self, File}, io::{self, Read, Write}, num::ParseIntError, ops::Deref, path::PathBuf, rc::Rc, str::Utf8Error, string::FromUtf8Error, sync::Arc};
 
 use aes::cipher::{block_padding::{NoPadding, UnpadError}, BlockDecryptMut, KeyIvInit};
 use serde_json::{from_value, Value};
@@ -11,10 +12,10 @@ type DecryptThingy = cbc::Decryptor<aes::Aes128>;
 pub enum InventoryDecryptError {
     DecryptorError(UnpadError),
     ParseError(ParseErrorType),
-    IoError(io::Error),
+    IoError(io::Error, String),
     EnvVarError(VarError),
     DeserializeError(serde_json::Error),
-    OtherError(Rc<str>),
+    OtherError(Arc<str>),
 }
 
 impl Error for InventoryDecryptError {}
@@ -23,7 +24,7 @@ impl Display for InventoryDecryptError {
         let err = match self {
             InventoryDecryptError::DecryptorError(e) => format!("DecryptorError: {}", e),
             InventoryDecryptError::ParseError(e) => format!("ParseError: {}", e),
-            InventoryDecryptError::IoError(e) => format!("IoErrort: {}", e),
+            InventoryDecryptError::IoError(e, path) => format!("IoErrort: {}, {}", e, path),
             InventoryDecryptError::EnvVarError(e) => format!("EnvVarErrort: {}", e),
             InventoryDecryptError::DeserializeError(e) => format!("DeserializeErrort: {}", e),
             InventoryDecryptError::OtherError(e) => String::from(e.deref()),
@@ -35,7 +36,7 @@ impl Display for InventoryDecryptError {
 #[derive(Debug)]
 pub enum ParseErrorType {
     ParseInt(ParseIntError),
-    ParseUtf8(FromUtf8Error),
+    ParseUtf8(Utf8Error),
 }
 
 impl Display for ParseErrorType {
@@ -48,11 +49,15 @@ impl Display for ParseErrorType {
     }
 }
 
-pub fn decrypt_last_data<'a>() -> Result<Vec<Upgrades>, InventoryDecryptError> {
-    let path:PathBuf = PathBuf::from("../lastData.dat");
-    let mut file = File::open(path).map_err(|e| InventoryDecryptError::IoError(e))?;
+pub fn decrypt_last_data<'a>(custom_path: Option<&str>) -> Result<Vec<Upgrades>, InventoryDecryptError> {
+    let path = if let Some(path) = custom_path {
+        PathBuf::from(path)
+    } else {
+        PathBuf::from("lastData.dat")
+    };
+    let mut file = File::open(path).map_err(|e| InventoryDecryptError::IoError(e, custom_path.unwrap().to_string()))?;
     let mut ciphertext: Vec<u8> = vec![];
-    file.read_to_end(&mut ciphertext).map_err(|e| InventoryDecryptError::IoError(e))?;
+    file.read_to_end(&mut ciphertext).map_err(|e| InventoryDecryptError::IoError(e, "".to_string()))?;
 
     let key_var = env::var("KEY").map_err(|e| InventoryDecryptError::EnvVarError(e))?;
     let mut key: Vec<u8> = Vec::with_capacity(16);
@@ -73,11 +78,11 @@ pub fn decrypt_last_data<'a>() -> Result<Vec<Upgrades>, InventoryDecryptError> {
         .decrypt_padded_vec_mut::<NoPadding>(&ciphertext)
         .map_err(|e| InventoryDecryptError::DecryptorError(e))?;
 
-    let res = String::from_utf8(res).map_err(|e| InventoryDecryptError::ParseError(ParseErrorType::ParseUtf8(e)))?;
+    let res = str::from_utf8(&res).map_err(|e| InventoryDecryptError::ParseError(ParseErrorType::ParseUtf8(e)))?;
     let res = res.replace("\"{", "{");
     let res = res.replace("}\"", "}");
     let res: String = res.split(r"\").collect();
-    let res = res.trim_end();
+    let res = res.trim_end_matches(|c| c != '}');
     let res = serde_json::from_str::<Value>(res).map_err(|e| InventoryDecryptError::DeserializeError(e))?;
     let upgrades_raw = match res["Upgrades"].as_array() {
         Some(v) => v,
@@ -102,7 +107,7 @@ mod tests {
     #[test]
     fn test_deserialize() {
         dotenv().unwrap();
-        let upgrades = decrypt_last_data().unwrap();
+        let upgrades = decrypt_last_data(None).unwrap();
         // println!("{}")
     }
 }

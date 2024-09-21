@@ -21,12 +21,11 @@ pub fn uri_main(wfm: Arc<Mutex<WFMClient>>) -> Result<Response<Cursor<Vec<u8>>>,
             }
         }
     } else {
-        // let valid = smolscale::block_on(async move {
-        //     let wfm = wfm.lock().await;
-        //     let wfm = wfm.deref();
-        //     wfm.validate().await
-        // }).map_err(|e| e.prop("uri_main".into()))?;
-        let valid = true;
+        let valid = smolscale::block_on(async move {
+            let wfm = wfm.lock().await;
+            let wfm = wfm.deref();
+            wfm.validate().await
+        }).map_err(|e| e.prop("uri_main".into()))?;
         if valid {
             LOGGED_IN.set(true).unwrap();
             html! {
@@ -89,12 +88,12 @@ pub fn uri_home() -> Response<Cursor<Vec<u8>>> {
     })
 }
 
-pub fn uri_forbidden() -> Response<Cursor<Vec<u8>>> {
+pub fn uri_unauthorized() -> Response<Cursor<Vec<u8>>> {
     let pagecontent = html! {
         (DOCTYPE)
         body {
             h2 {
-                "403 Forbidden"
+                "401 Unauthorized"
             }
         }
     };

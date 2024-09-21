@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::sync::Arc;
 
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
@@ -50,15 +50,23 @@ static SQL_SELECT_ITEMS: &str = "SELECT * FROM items";
 static SQL_SELECT_ATTRIBUTES: &str = "SELECT * FROM attributes WHERE item_id = ?1";
 static SQL_SELECT_AUCTIONS: &str = "SELECT * FROM auctions";
 
+static SQL_DELETE_ITEMS: &str = "DELETE FROM items WHERE item_id = ?1";
+static SQL_DELETE_ATTRIBUTES: &str = "DELETE FROM attributes WHERE item_id = ?1";
+static SQL_DELETE_AUCTIONS: &str = "DELETE FROM auctions WHERE oid = ?1";
+
 impl InventoryDB {
-    pub fn open() -> Result<Self, rusqlite::Error> {
-        let mut connection = Connection::open("inventory.sqlite")?;
+    pub fn open(custom_path: &str) -> Result<Self, rusqlite::Error> {
+        let mut connection = Connection::open(custom_path)?;
         let tx = connection.transaction()?;
         tx.execute(SQL_TABLE_ITEMS, ())?;
         tx.execute(SQL_TABLE_AUCTIONS, ())?;
         tx.execute(SQL_TABLE_ATTRIBUTES, ())?;
         tx.commit()?;
         Ok(Self { connection })
+    }
+
+    pub fn close(self) -> Result<(), (Connection, rusqlite::Error)> {
+        self.connection.close()
     }
 
     pub(super) fn insert_auctions(&mut self, auctions: Vec<Auction>, oid: &str) -> Result<(), rusqlite::Error> {
@@ -124,6 +132,20 @@ impl InventoryDB {
         tx.commit()
     }
 
+    pub(super) fn delete_items_auctions(&mut self, items: Vec<Item>) -> Result<(), rusqlite::Error> {
+        items.into_iter().try_for_each(|item| -> Result<(), rusqlite::Error> {
+            let item_id = item.oid.clone();
+            let mut items_delete = self.connection.prepare(SQL_DELETE_ITEMS)?;
+            let mut attrs_delete = self.connection.prepare(SQL_DELETE_ATTRIBUTES)?;
+            let mut aucs_delete = self.connection.prepare(SQL_DELETE_AUCTIONS)?;
+
+            items_delete.execute(&[&item_id])?;
+            attrs_delete.execute(&[&item_id])?;
+            aucs_delete.execute(&[&item_id])?;
+            Ok(())
+        })
+    }
+
     pub(super) fn select_items(&self) -> Result<Vec<Item>, rusqlite::Error> {
         let mut items_select = self.connection.prepare(SQL_SELECT_ITEMS)?;
         let items = items_select.query_map([], |row| {
@@ -135,7 +157,7 @@ impl InventoryDB {
                 weapon_url_name: row.get("weapon_url_name")?,
                 re_rolls: row.get("re_rolls")?,
                 mod_rank: row.get("mod_rank")?,
-                oid: row.get("oid")?,
+                oid: row.get("item_id")?,
             })
         })?.try_fold(vec![], |mut acc, item| -> Result<Vec<Item>, rusqlite::Error> {
                 let mut item = item?;
@@ -147,7 +169,7 @@ impl InventoryDB {
         Ok(items)
     }
 
-    fn select_attributes(&self, oid: Rc<str>) -> Result<Vec<Attribute>, rusqlite::Error> {
+    fn select_attributes(&self, oid: Arc<str>) -> Result<Vec<Attribute>, rusqlite::Error> {
         let mut attributes_select = self.connection.prepare(SQL_SELECT_ATTRIBUTES)?;
         let attributes = attributes_select.query_map(&[&oid], |row| {
             Ok(Attribute {
@@ -162,7 +184,7 @@ impl InventoryDB {
         Ok(attributes)
     }
 
-    pub(super) fn select_auction(&self, oid: Rc<str>) -> Result<Auction, rusqlite::Error> {
+    pub(super) fn select_auction(&self, oid: Arc<str>) -> Result<Auction, rusqlite::Error> {
         let mut auctions_select = self.connection.prepare(SQL_SELECT_AUCTIONS)?;
         let auc = auctions_select.query_row(&[&oid], |row| {
             Ok(Auction {
@@ -182,34 +204,21 @@ impl InventoryDB {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs::OpenOptions, io::Write, ops::{Add, Sub}, sync::Arc, time::Duration};
+    use std::{fs::OpenOptions, io::Write, ops::{Add, Sub}};
 
     use dotenv::dotenv;
-    use futures::lock::Mutex;
     use rand::random;
-    use serde_json::from_str;
     use time::Duration as LibDuration;
 
-    use crate::{http_client::{
-        client::{HttpClient, Method},
-        qf_client::QFClient
-        },
-        rate_limiter::RateLimiter,
-        rivens::inventory::{
+    use crate::rivens::inventory::{
             convert_raw_inventory::convert_inventory_data, database::Auction, raw_inventory::decrypt_last_data, riven_lookop::RivenDataLookup
-        }
-    };
+        };
 
-    #[tokio::test]
     async fn test_insert_data() {
         dotenv().unwrap();
-        let qf = QFClient::new();
-        let mut limiter = RateLimiter::new(1.0, Duration::from_secs(1));
-        let (body, _) = qf.send_request(Method::GET, qf.endpoint.as_str(), &mut limiter, None, None).await.unwrap().res;
-        let body = body.unwrap().to_string();
-        let lookup = Arc::new(Mutex::new(from_str::<RivenDataLookup>(body.as_str()).unwrap()));
-        let raw_upgrades = decrypt_last_data().unwrap();
-        let items = convert_inventory_data(lookup, raw_upgrades).await;
+        let lookup = RivenDataLookup::setup().unwrap();
+        let raw_upgrades = decrypt_last_data(None).unwrap();
+        let items = convert_inventory_data(&lookup, raw_upgrades).await;
         let mut auctions = Vec::with_capacity(items.len());
         auctions.fill(Auction::default());
     }
@@ -242,7 +251,6 @@ mod tests {
         println!("Total file write took {} seconds", total_time.as_seconds_f32());
     }
 
-    #[tokio::test]
     async fn test_write_dump() {
         // dotenv().unwrap();
         // let qf = QFClient::new();

@@ -1,10 +1,10 @@
 use ascii::AsciiString;
 use async_lock::Mutex;
 use once_cell::sync::OnceCell;
-use std::{io::Cursor, sync::{Arc, Mutex as StdMutex}, thread::{self, JoinHandle}};
+use std::{fs, io::{self, Cursor}, sync::{Arc, Mutex as StdMutex}, thread::JoinHandle, time::SystemTime};
 use tiny_http::{Header, Response};
 
-use crate::{http_client::{auth_state::AuthState, wfm_client::WFMClient}, pages::{home::{uri_forbidden, uri_home, uri_main, uri_not_found}, login::{uri_login, uri_login_req}}, resources::{uri_htmx, uri_logo, uri_styles}, AppError, STOPPED};
+use crate::{http_client::{auth_state::AuthState, wfm_client::WFMClient}, pages::{home::{uri_home, uri_main, uri_not_found, uri_unauthorized}, login::{uri_login, uri_login_req}}, resources::{uri_htmx, uri_logo, uri_styles}, rivens::inventory::{database::InventoryDB, inventory_sync::sync_db, riven_lookop::RivenDataLookup}, AppError, STOPPED};
 
 #[derive(Debug)]
 struct User(Option<AsciiString>);
@@ -13,8 +13,21 @@ pub enum CurrentScreen {
 }
 
 static USER: OnceCell<User> = OnceCell::new();
-const ARRAY_REPEAT_VALUE: Option<JoinHandle<Result<(), AppError>>> = None;
 pub static LOGGED_IN: OnceCell<bool> = OnceCell::new();
+
+struct LastModified(SystemTime, SystemTime);
+
+impl LastModified {
+    fn detect_file_change(&mut self) -> io::Result<bool> {
+        let attrs = fs::metadata("lastData.dat")?;
+        self.1 = attrs.modified().unwrap();
+        if self.1 != self.0 {
+            self.0 = self.1;
+            return Ok(true);
+        }
+        Ok(false)
+    }
+}
 
 pub(crate) fn start_server() -> Result<(), AppError> {
     let s = tiny_http::Server::http("127.0.0.1:8000").unwrap();
@@ -28,7 +41,6 @@ pub(crate) fn start_server() -> Result<(), AppError> {
 
     let wfm_client = WFMClient::new(auth_state);
     let wfm_client = Arc::new(Mutex::new(wfm_client));
-
 
     let rq = s.recv().unwrap();
     let head = rq.headers().iter().find(|&v| v.field.equiv("User-Agent"));
@@ -45,6 +57,15 @@ pub(crate) fn start_server() -> Result<(), AppError> {
         wfm_client.clone()).map_err(|e| e.prop("start_server".into()))?;
     rq.respond(rs).unwrap();
 
+    let mut last_modified = LastModified(SystemTime::UNIX_EPOCH, SystemTime::UNIX_EPOCH);
+    let db = InventoryDB::open("inventory.sqlite")
+        .map_err(
+            |e| AppError::new(e.to_string(), "start_server: InventoryDB::open".to_string())
+        )?;
+
+    let db = Arc::new(Mutex::new(db));
+    let lookup = Arc::new(RivenDataLookup::setup().unwrap());
+
     loop {
         if let Some(mut rq) = s.try_recv().unwrap() {
             // println!("received request! method: {:?}, url: {:?}",
@@ -53,7 +74,7 @@ pub(crate) fn start_server() -> Result<(), AppError> {
             // );
             if let User(Some(u)) = USER.get().unwrap() {
                 if &rq.headers().iter().find(|&v| v.field.equiv("User-Agent")).unwrap().value != u {
-                    let r = uri_forbidden();
+                    let r = uri_unauthorized();
                     rq.respond(r).unwrap();
                     continue;
                 }
@@ -73,6 +94,19 @@ pub(crate) fn start_server() -> Result<(), AppError> {
             }
             continue;
         };
+
+        if last_modified.detect_file_change()
+            .map_err(|e|
+                AppError::new(e.to_string(), "start_server: detect_file_change".to_string())
+            )? {
+            smolscale::block_on({
+                let lookup = lookup.clone();
+                let db = db.clone();
+                async move {
+                    sync_db(db, &lookup, None).await.unwrap()
+                }
+            });
+        }
     }
     println!("SERVER CLOSED");
     Ok(())
@@ -111,3 +145,4 @@ fn match_uri(
         }
     }
 }
+

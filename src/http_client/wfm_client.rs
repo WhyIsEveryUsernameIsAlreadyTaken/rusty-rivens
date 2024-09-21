@@ -14,7 +14,7 @@ use super::{
 #[derive(Debug)]
 pub struct WFMClient {
     endpoint: String,
-    limiter: Arc<Mutex<RateLimiter>>,
+    limiter: Arc<Mutex<Option<RateLimiter>>>,
     auth: AuthState,
     http_client: Option<JoinHandle<()>>
 }
@@ -25,7 +25,7 @@ impl WFMClient {
     pub fn new(auth: AuthState) -> Self {
         WFMClient {
             endpoint: String::from("https://api.warframe.market/v1"),
-            limiter: Arc::new(Mutex::new(RateLimiter::new(1.0, Duration::new(1, 0)))),
+            limiter: Arc::new(Mutex::new(Some(RateLimiter::new(1.0, Duration::new(1, 0))))),
             auth,
             http_client: None,
         }
@@ -196,3 +196,5 @@ mod tests {
         });
     }
 }
+
+

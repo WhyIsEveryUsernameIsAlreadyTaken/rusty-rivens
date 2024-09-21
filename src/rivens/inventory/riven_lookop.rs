@@ -1,6 +1,6 @@
 use std::{ops::{Deref, DerefMut}, rc::Rc, sync::Arc};
 
-use futures::lock::Mutex;
+use async_lock::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::{http_client::{client::{HttpClient, Method}, qf_client::QFClient}, AppError};
@@ -52,18 +52,18 @@ impl Default for RivenDataLookup {
 }
 
 impl RivenDataLookup {
-    pub async fn setup(qf: Arc<Mutex<QFClient>>) -> Result<Self, AppError>{
-        let qf = qf.lock().await;
-        let qf = qf.deref();
-        let mut rate_limiter = qf.limiter.lock().await;
-        let rate_limiter = rate_limiter.deref_mut();
-        let (body_value, _) = match qf.send_request(
-            Method::GET,
-            qf.endpoint.as_str(),
-            rate_limiter,
-            None,
-            None
-        ).await {
+    pub fn setup() -> Result<Self, AppError>{
+        let qf = QFClient::new();
+        let res = smolscale::block_on(async move {
+            qf.send_request(
+                Method::GET,
+                qf.endpoint.as_str(),
+                &mut None,
+                None,
+                None
+            ).await
+        });
+        let (body_value, _) = match res {
             Ok(v) => v.res,
             Err(e) => return Err(
                 e.prop("setup".into())
@@ -75,7 +75,7 @@ impl RivenDataLookup {
                 String::from("QFClient::setup")
             ))
         }
-        let new_data: Self = serde_json::from_value(body_value.unwrap()).map_err(|e| AppError::new(
+        let new_data: Self = serde_json::from_value(body_value.unwrap()["items"].clone()).map_err(|e| AppError::new(
                     e.to_string(),
                     String::from("QFClient::setup: from_value::<RivenDataLookup>")
                 ))?;

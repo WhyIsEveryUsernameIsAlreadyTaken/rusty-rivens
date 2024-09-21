@@ -632,13 +632,14 @@ async fn handle(inner: ClientHandleInner, receiver: Receiver<RequestBuilder>, se
         return Err(ConnectionError::TimeoutNone).unwrap();
     }
 
+    println!("Connecting to {addr}");
     let mut tstream = connect(&inner, addr.clone()).await.unwrap();
 
     // i love this btw
     loop {
         if STOPPED.get().is_some() {
             tstream.close().await.map_err(|e| ConnectionError::IoError(e)).unwrap();
-            println!("Connection Closed");
+            println!("Connection Closed for {addr}");
             return Ok(());
         }
         let mut request = if let Ok(req) = receiver.try_recv()
@@ -653,6 +654,8 @@ async fn handle(inner: ClientHandleInner, receiver: Receiver<RequestBuilder>, se
                 SendError::IoError(ie) => match ie.kind() {
                     ErrorKind::WriteZero => {
                         tstream.close().await.map_err(|e| ConnectionError::IoError(e)).unwrap();
+                        println!("Connection Closed for {addr}");
+                        println!("Reconnecting to {addr}");
                         tstream = connect(&inner, addr.clone()).await.unwrap();
                         request.send(&mut tstream).await.map_err(|e| ConnectionError::SendError(e))
                     },
@@ -689,11 +692,13 @@ pub trait HttpClient<'a> {
         &self,
         method: Method,
         uri: &str,
-        rate_limiter: &mut RateLimiter,
+        rate_limiter: &mut Option<RateLimiter>,
         auth: Option<AuthState>,
         body: Option<Value>,
     ) -> Result<ApiResult, AppError> {
-        rate_limiter.wait_for_token().await;
+        if let Some(rate_limiter) = rate_limiter {
+            rate_limiter.wait_for_token().await;
+        }
         let request = RequestBuilder::new().uri(uri).method(method.clone());
         // .header(
         //     "Authorization",
@@ -766,6 +771,11 @@ pub trait HttpClient<'a> {
             &status.text,
             SystemTime::now().duration_since(start).unwrap().as_secs_f32()
         );
+        if status.code == 429 {
+            if let Some(rate_limiter) = rate_limiter {
+                rate_limiter.add_delay(1.0);
+            }
+        }
         let headers = response.headers();
         let content = response.body().unwrap_or_default();
 
@@ -776,8 +786,12 @@ pub trait HttpClient<'a> {
             });
         }
         let response = serde_json::Value::from_str(&content).map_err(|e| {
-            AppError::new(e.to_string(), String::from("Value::from_str: send_request"))
-        })?;
+            AppError::new(e.to_string(), String::from("send_request: Value::from_str"))
+        });
+        if response.is_err() {
+            println!("Response body: {content}");
+        }
+        let response = response?;
 
         Ok(ApiResult {
             res: (Some(response), headers),

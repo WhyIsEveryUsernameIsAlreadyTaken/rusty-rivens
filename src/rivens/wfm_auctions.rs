@@ -55,6 +55,7 @@ mod tests {
         "note_raw": "",
         "is_direct_sell": true,
         "id": "66368ad69454320dffff15f1",
+        "oid": "66368ad69454320dffff15f1",
         "private": false
       }"#;
         let _auction: Auction = serde_json::from_str(input).unwrap();
