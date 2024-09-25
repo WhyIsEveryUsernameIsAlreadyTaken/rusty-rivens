@@ -52,7 +52,7 @@ impl Default for RivenDataLookup {
 }
 
 impl RivenDataLookup {
-    pub fn setup() -> Result<Self, AppError>{
+    pub fn setup() -> Result<Self, AppError> {
         let qf = QFClient::new();
         let res = smolscale::block_on(async move {
             qf.send_request(

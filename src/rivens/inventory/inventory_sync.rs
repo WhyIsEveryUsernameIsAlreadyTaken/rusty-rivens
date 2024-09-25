@@ -33,7 +33,7 @@ pub async fn sync_db(
     let same_items = db_items.iter()
         .filter(|&item|
             inventory_items.iter()
-                .find(|&upgrade| upgrade.item_id.oid == item.oid).is_some()
+                .find(|&upgrade| item.oid == upgrade.item_id.oid ).is_some()
         ).count();
 
     let old_items: Vec<Item> = db_items.iter()
@@ -66,14 +66,21 @@ pub async fn sync_db(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{fs::File, sync::Arc};
 
     use async_lock::Mutex;
     use dotenv::dotenv;
+    use serde_json::{from_str, Value};
 
-    use crate::{http_client::qf_client::QFClient, rivens::inventory::{database, raw_inventory::decrypt_last_data, riven_lookop::RivenDataLookup}};
+    use crate::{http_client::qf_client::QFClient, rivens::inventory::{database, raw_inventory::decrypt_last_data, riven_lookop::RivenDataLookup}, STOPPED};
 
     use super::sync_db;
+
+    fn test_sync_setup_lookup() -> RivenDataLookup {
+        let data = include_str!("mock_riven_lookup.json");
+        let val: Value = from_str(data).unwrap();
+        serde_json::from_value(val["items"].clone()).unwrap()
+    }
 
     #[test]
     fn test_sync_db() {
@@ -81,7 +88,7 @@ mod tests {
         let contrl_items = Some(decrypt_last_data(Some("lastDataControl.dat")).unwrap());
         let added_items = Some(decrypt_last_data(Some("lastDataAdded.dat")).unwrap());
         let subtracted_items = Some(decrypt_last_data(Some("lastDataSubtracted.dat")).unwrap());
-        let lookup = RivenDataLookup::setup().unwrap();
+        let lookup = test_sync_setup_lookup();
         let db = database::InventoryDB::open("test_db.sqlite").unwrap();
         let db = Arc::new(Mutex::new(db));
 

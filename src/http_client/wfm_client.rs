@@ -3,6 +3,7 @@ use std::{
 };
 
 use async_lock::Mutex;
+use once_cell::sync::OnceCell;
 
 use crate::{jwt::jwt_is_valid, rate_limiter::RateLimiter, AppError};
 
@@ -175,11 +176,15 @@ impl WFMClient {
     // }
 }
 
+pub static TEST_WFM_STOPPED: OnceCell<bool> = once_cell::sync::OnceCell::new();
+
 #[cfg(test)]
 mod tests {
-    use std::{ops::{Deref, DerefMut}, time::Duration};
+    use std::ops::DerefMut;
 
-    use crate::{http_client::{auth_state::AuthState, client::{HttpClient, Method}, wfm_client::WFMClient}, rate_limiter::{self, RateLimiter}, STOPPED};
+    use crate::http_client::{auth_state::AuthState, client::{HttpClient, Method}, wfm_client::WFMClient};
+
+    use super::TEST_WFM_STOPPED;
 
     #[test]
     fn test_wfmclient() {
@@ -194,7 +199,6 @@ mod tests {
                 None
             ).await
         });
+        TEST_WFM_STOPPED.set(true).unwrap();
     }
 }
-
-

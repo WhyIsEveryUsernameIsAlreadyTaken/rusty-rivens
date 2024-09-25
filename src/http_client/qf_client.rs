@@ -1,3 +1,5 @@
+use once_cell::sync::OnceCell;
+
 use super::client::HttpClient;
 
 #[derive(Clone, Debug)]
@@ -15,12 +17,14 @@ impl QFClient {
     }
 }
 
+pub static TEST_QF_STOPPED: OnceCell<bool> = once_cell::sync::OnceCell::new();
+
 #[cfg(test)]
 mod tests {
 
-    use crate::{http_client::client::{HttpClient, Method}, STOPPED};
+    use crate::http_client::client::{HttpClient, Method};
 
-    use super::QFClient;
+    use super::{QFClient, TEST_QF_STOPPED};
 
     #[test]
     fn test_qfclient() {
@@ -34,6 +38,6 @@ mod tests {
                 None
             ).await
         });
-        let _ = STOPPED.set(true);
+        TEST_QF_STOPPED.set(true).unwrap();
     }
 }

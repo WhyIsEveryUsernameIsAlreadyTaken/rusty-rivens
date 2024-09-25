@@ -19,7 +19,7 @@ struct LastModified(SystemTime, SystemTime);
 
 impl LastModified {
     fn detect_file_change(&mut self) -> io::Result<bool> {
-        let attrs = fs::metadata("lastData.dat")?;
+        let attrs = fs::metadata("dummy.txt")?;
         self.1 = attrs.modified().unwrap();
         if self.1 != self.0 {
             self.0 = self.1;
@@ -97,8 +97,11 @@ pub(crate) fn start_server() -> Result<(), AppError> {
 
         if last_modified.detect_file_change()
             .map_err(|e|
-                AppError::new(e.to_string(), "start_server: detect_file_change".to_string())
-            )? {
+                AppError::new(
+                    e.to_string(),
+                    "start_server: detect_file_change".to_string()
+                )
+        )? {
             smolscale::block_on({
                 let lookup = lookup.clone();
                 let db = db.clone();
