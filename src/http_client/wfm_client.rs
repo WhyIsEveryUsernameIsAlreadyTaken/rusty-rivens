@@ -78,7 +78,6 @@ impl WFMClient {
     }
 
     pub async fn validate(&self) -> Result<bool, AppError> {
-        let valid_jwt: bool;
         let valid_jwt = if !self.auth.access_token.is_empty() {
             jwt_is_valid(&self.auth.access_token).map_err(|e| e.prop("validate".into()))?
         } else {
@@ -91,8 +90,13 @@ impl WFMClient {
         let mut rate_limiter = self.limiter.lock().await;
         let rate_limiter = rate_limiter.deref_mut();
         let res = self
-            .send_request(Method::GET, format!("{}/profile", self.endpoint).as_str(), rate_limiter, Some(self.auth.clone()), None)
-            .await;
+            .send_request(
+                Method::GET,
+                format!("{}/profile", self.endpoint).as_str(),
+                rate_limiter,
+                Some(self.auth.clone()),
+                None
+            ).await;
         let (body, _) = match res {
             Ok(v) => v.res,
             Err(e) => return Err(e.prop("validate".into())),

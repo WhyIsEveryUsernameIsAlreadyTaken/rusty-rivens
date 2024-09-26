@@ -22,7 +22,8 @@ use crate::{http_client::{qf_client::TEST_QF_STOPPED, wfm_client::TEST_WFM_STOPP
 use super::auth_state::AuthState;
 
 #[derive(Debug, PartialEq)]
-struct Header(Box<str>, Box<str>);
+struct Header(Arc<str>, Arc<str>);
+
 #[derive(Debug)]
 pub struct Headers(Vec<Header>);
 
@@ -31,7 +32,7 @@ static WFM_HANDLE: OnceCell<(ClientHandle, Receiver<Response>)> = OnceCell::new(
 static QF_HANDLE: OnceCell<(ClientHandle, Receiver<Response>)> = OnceCell::new();
 
 impl Headers {
-    pub fn get(&self, key: &str) -> Option<Box<str>> {
+    pub fn get(&self, key: &str) -> Option<Arc<str>> {
         if let Some(header) = self.0.iter().find(|v| v.0 == key.into()) {
             Some(header.1.clone())
         } else {
@@ -236,7 +237,7 @@ impl Display for SendError {
 
 impl std::error::Error for SendError {}
 
-async fn collect_body_chunk(
+async fn collect_payload_chunk(
     out: &mut String,
     size: usize,
     reader: &mut BufReader<&mut TlsStream<TcpStream>>,
@@ -300,7 +301,7 @@ impl RequestBuilder {
                 if size == 0 {
                     break;
                 }
-                collect_body_chunk(&mut out, size, &mut reader).await?;
+                collect_payload_chunk(&mut out, size, &mut reader).await?;
             }
         } else if let Some(header) = out.split("\r\n").find(|&v| v.contains("Content-Length")) {
             let (_, val) = match header.split_once(": ") {
@@ -319,7 +320,7 @@ impl RequestBuilder {
                     out.clone().into(),
                 ))
             })?;
-            collect_body_chunk(&mut out, size, &mut reader).await?;
+            collect_payload_chunk(&mut out, size, &mut reader).await?;
         } else {
             return Err(SendError::MalformedResponse((
                 "No/Malformed Content-Length/Transfer-Encoding Header".into(),
@@ -585,7 +586,7 @@ impl Display for ConnectionError {
                 f.write_str(format!("Http addresses not supported: {v}").as_str())
             }
             Self::TlsConnectorNone => f.write_str("TLS connector not instantiated"),
-            Self::HostNone => f.write_str("None not instantiated"),
+            Self::HostNone => f.write_str("Host not instantiated"),
             Self::PortNone => f.write_str("Port not instantiated"),
             Self::TimeoutNone => f.write_str("Timeout not instantiated"),
             Self::ChanSendError(e) => {
@@ -703,7 +704,8 @@ async fn handle(
     println!("Connecting to {addr}");
     let mut tstream = connect(&inner, addr.clone()).await.unwrap();
 
-    // i love this btw
+    // nvm i dont like this anymore...
+    // too much indentation...
     loop {
         if cfg!(test) {
             match test_ctype.as_ref().unwrap() {
@@ -841,6 +843,7 @@ pub trait HttpClient<'a> {
             None => request,
         };
 
+        // too much indentation here too...
         let (http_client, response_receiver) = if uri.contains("api.warframe.market") {
             WFM_HANDLE.get_or_try_init(|| -> Result<(ClientHandle, Receiver<_>), _> {
                 let (sender, receiver) = async_channel::bounded::<RequestBuilder>(1);
@@ -866,7 +869,7 @@ pub trait HttpClient<'a> {
                 let (sender, receiver) = async_channel::bounded::<RequestBuilder>(1);
                 let (sender2, receiver2) = async_channel::bounded::<Response>(1);
                 let ctype = if cfg!(test) {
-                    Some(ClientType::WFM)
+                    Some(ClientType::QF)
                 } else {
                     None
                 };
