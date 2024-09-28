@@ -1,12 +1,9 @@
 use std::{error::Error, fmt::{self, Display}, sync::Arc, thread};
 
-use gtk::{
-    prelude::{ApplicationExt, ApplicationExtManual, ContainerExt, WidgetExt}, Application, ApplicationWindow
-};
+use dotenv::dotenv;
 use once_cell::sync::OnceCell;
 use serde::Deserialize;
 use server::start_server;
-use webkit2gtk::{SettingsExt, WebContext, WebContextExt, WebView, WebViewExt};
 
 mod pages;
 mod resources;
@@ -51,36 +48,20 @@ impl AppError {
 impl Error for AppError {}
 
 fn main() {
+    dotenv().unwrap(); // creds
     // START SERVER ON SEPERATE THREAD
     let server = thread::spawn(move || start_server().unwrap());
 
-    let app = Application::builder()
-        .application_id("org.example.HelloWorld")
-        .build();
-    app.connect_activate(|app| {
-        let win = ApplicationWindow::builder()
-            .application(app)
-            .default_width(1280)
-            .default_height(720)
-            .title("guhhhh")
-            .build();
+    web_view::builder()
+        .title("Rusty Rivens v0.0.1")
+        .content(web_view::Content::Url("http://127.0.0.1:8000/"))
+        .size(1280, 720)
+        .resizable(true)
+        .debug(true)
+        .user_data(())
+        .invoke_handler(|_webview, _arg| Ok(()))
+        .run().unwrap();
 
-        let context = WebContext::default().unwrap();
-        context.set_cache_model(webkit2gtk::CacheModel::WebBrowser);
-        let webview = WebView::with_context(&context);
-        // YOU CONNECT HERE RIGHT AFTER
-        webview.load_uri("http://127.0.0.1:8000/");
-        win.add(&webview);
-
-        let settings = WebViewExt::settings(&webview).unwrap();
-
-        settings.set_enable_developer_extras(true);
-        settings.set_user_agent_with_application_details(Some("UwU"), Some("v0.0.1"));
-
-        win.show_all();
-    });
-
-    app.run();
     STOPPED.set(true).unwrap();
     server.join().unwrap();
 }

@@ -1,6 +1,6 @@
 `cargo run`
 
-# HTMX + WebKit2GTK
+# HTMX + WebView
 
 finally im in control
 

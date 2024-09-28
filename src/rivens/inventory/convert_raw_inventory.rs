@@ -530,7 +530,7 @@ fn lookup_riven_data<'a>(
                 .find(|&upgr| upgr.modifier_tag == Some(rattr.tag.into()))
             {
                 Some(v) => v,
-                None => return Err(RivenLookupError::InvalidAttribute(rattr.tag.clone())),
+                None => return Err(RivenLookupError::InvalidAttribute(rattr.tag)),
             };
             let wfm_url = match upgrade.wfm_url.clone() {
                 Some(v) => v,

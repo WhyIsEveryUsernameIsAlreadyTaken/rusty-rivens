@@ -1,5 +1,5 @@
 use std::{
-    ops::{Deref, DerefMut}, sync::Arc, thread::JoinHandle, time::Duration
+    ops::DerefMut, sync::Arc, thread::JoinHandle, time::Duration
 };
 
 use async_lock::Mutex;

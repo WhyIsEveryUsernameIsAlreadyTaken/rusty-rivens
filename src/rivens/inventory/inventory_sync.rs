@@ -56,10 +56,11 @@ pub async fn sync_db(
                 .find(|&item| item.oid == upgrade.item_id.oid).is_none()
     ).collect();
 
-    // ADD NEW ITEMS TO DB AND PUSH THEM UP TO UI
+    // ADD NEW ITEMS TO DB
 
     let new_items = convert_inventory_data(lookup, new_items).await;
     db.insert_items(&new_items).unwrap();
+    // PUSH CHANGES UP TO UI
 
     Ok((new_items.len(), old_len, same_items))
 }

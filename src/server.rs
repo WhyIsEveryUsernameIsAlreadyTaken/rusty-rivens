@@ -1,21 +1,20 @@
 use ascii::AsciiString;
 use async_lock::Mutex;
 use once_cell::sync::OnceCell;
-use std::{fs, io::{self, Cursor}, sync::{Arc, Mutex as StdMutex}, thread::JoinHandle, time::SystemTime};
+use std::{fs, io::{self, Cursor}, sync::Arc, time::SystemTime};
 use tiny_http::{Header, Response};
 
-use crate::{http_client::{auth_state::AuthState, wfm_client::WFMClient}, pages::{home::{uri_home, uri_main, uri_not_found, uri_unauthorized}, login::{uri_login, uri_login_req}}, resources::{uri_htmx, uri_logo, uri_styles}, rivens::inventory::{database::InventoryDB, inventory_sync::sync_db, riven_lookop::RivenDataLookup}, AppError, STOPPED};
+use crate::{http_client::{auth_state::AuthState, wfm_client::WFMClient}, pages::{home::{uri_edit, uri_home, uri_main, uri_not_found, uri_unauthorized}, login::{uri_login, uri_login_req}}, resources::{uri_htmx, uri_logo, uri_styles, uri_wfmlogo}, rivens::inventory::{database::InventoryDB, inventory_sync::sync_db, riven_lookop::RivenDataLookup}, AppError, STOPPED};
 
 #[derive(Debug)]
 struct User(Option<AsciiString>);
-pub enum CurrentScreen {
-    Login,
-}
 
 static USER: OnceCell<User> = OnceCell::new();
 pub static LOGGED_IN: OnceCell<bool> = OnceCell::new();
 
 struct LastModified(SystemTime, SystemTime);
+
+pub struct EditToggle(pub bool);
 
 impl LastModified {
     fn detect_file_change(&mut self) -> io::Result<bool> {
@@ -31,16 +30,17 @@ impl LastModified {
 
 pub(crate) fn start_server() -> Result<(), AppError> {
     let s = tiny_http::Server::http("127.0.0.1:8000").unwrap();
-    let current_screen = Arc::new(StdMutex::new(CurrentScreen::Login));
+    let mut edit_toggle = EditToggle(false);
     println!("SERVER STARTED");
     if STOPPED.get().is_some() {
         return Ok(());
     }
 
     let auth_state = AuthState::setup().map_err(|e| e.prop("start_server".into()))?;
-
     let wfm_client = WFMClient::new(auth_state);
     let wfm_client = Arc::new(Mutex::new(wfm_client));
+
+    LOGGED_IN.set(true).unwrap();
 
     let rq = s.recv().unwrap();
     let head = rq.headers().iter().find(|&v| v.field.equiv("User-Agent"));
@@ -54,7 +54,8 @@ pub(crate) fn start_server() -> Result<(), AppError> {
         rq.url(),
         None,
         rq.headers(),
-        wfm_client.clone()).map_err(|e| e.prop("start_server".into()))?;
+        wfm_client.clone(),
+        &mut edit_toggle).map_err(|e| e.prop("start_server".into()))?;
     rq.respond(rs).unwrap();
 
     let mut last_modified = LastModified(SystemTime::UNIX_EPOCH, SystemTime::UNIX_EPOCH);
@@ -64,7 +65,7 @@ pub(crate) fn start_server() -> Result<(), AppError> {
         )?;
 
     let db = Arc::new(Mutex::new(db));
-    let lookup = Arc::new(RivenDataLookup::setup().unwrap());
+    let lookup = // Arc::new(RivenDataLookup::setup().unwrap());
 
     loop {
         if let Some(mut rq) = s.try_recv().unwrap() {
@@ -86,6 +87,7 @@ pub(crate) fn start_server() -> Result<(), AppError> {
                 Some(body.as_str()),
                 rq.headers(),
                 wfm_client.clone(),
+                &mut edit_toggle,
             ).map_err(|e| e.prop("start_server: spawn".into()))?;
             rq.respond(rs).unwrap();
         } else {
@@ -95,22 +97,22 @@ pub(crate) fn start_server() -> Result<(), AppError> {
             continue;
         };
 
-        if last_modified.detect_file_change()
-            .map_err(|e|
-                AppError::new(
-                    e.to_string(),
-                    "start_server: detect_file_change".to_string()
-                )
-        )? {
-            smolscale::block_on({
-                let lookup = lookup.clone();
-                let db = db.clone();
-                async move {
-                    sync_db(db, &lookup, None).await.unwrap()
-                }
-            });
-        }
-    }
+        // if last_modified.detect_file_change()
+        //     .map_err(|e|
+        //         AppError::new(
+        //             e.to_string(),
+        //             "start_server: detect_file_change".to_string()
+        //         )
+        // )? {
+        //     smolscale::block_on({
+        //         let lookup = lookup.clone();
+        //         let db = db.clone();
+        //         async move {
+        //             sync_db(db, &lookup, None).await.unwrap()
+        //         }
+        //     });
+        // }
+    };
     println!("SERVER CLOSED");
     Ok(())
 }
@@ -120,6 +122,7 @@ fn match_uri(
     body: Option<&str>,
     _headers: &[Header],
     wfm: Arc<Mutex<WFMClient>>,
+    edit_toggle: &mut EditToggle,
 ) -> Result<Response<Cursor<Vec<u8>>>, AppError> {
     match uri {
         "" | "/" => {
@@ -140,12 +143,17 @@ fn match_uri(
         "/home" => {
             Ok(uri_home())
         }
+        "/edit" => {
+            Ok(uri_edit(edit_toggle))
+        }
         "/logo.svg" => {
             Ok(uri_logo())
+        }
+        "/wfm_favicon.ico" => {
+            Ok(uri_wfmlogo())
         }
         _ => {
             Ok(uri_not_found())
         }
     }
 }
-

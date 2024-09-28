@@ -4,7 +4,7 @@ use maud::{html, PreEscaped, DOCTYPE};
 use std::{io::Cursor, ops::{Deref, DerefMut}, sync::Arc};
 use tiny_http::{Response, StatusCode};
 
-use crate::{http_client::{auth_state::AuthState, wfm_client::WFMClient}, server::{CurrentScreen, LOGGED_IN}, AppError};
+use crate::{http_client::{auth_state::AuthState, wfm_client::WFMClient}, server::{EditToggle, LOGGED_IN}, AppError};
 
 
 pub fn uri_main(wfm: Arc<Mutex<WFMClient>>) -> Result<Response<Cursor<Vec<u8>>>, AppError> {
@@ -21,11 +21,12 @@ pub fn uri_main(wfm: Arc<Mutex<WFMClient>>) -> Result<Response<Cursor<Vec<u8>>>,
             }
         }
     } else {
-        let valid = smolscale::block_on(async move {
-            let wfm = wfm.lock().await;
-            let wfm = wfm.deref();
-            wfm.validate().await
-        }).map_err(|e| e.prop("uri_main".into()))?;
+        //let valid = smolscale::block_on(async move {
+        //    let wfm = wfm.lock().await;
+        //    let wfm = wfm.deref();
+        //    wfm.validate().await
+        //}).map_err(|e| e.prop("uri_main".into()))?;
+        let valid = true;
         if valid {
             LOGGED_IN.set(true).unwrap();
             html! {
@@ -71,17 +72,51 @@ pub fn rivens() -> PreEscaped<String> {
                 hr {}
                     p style="text-align: center;"{"+16.5% Heat"}
                     p style="text-align: center; margin-block-start: 0; margin-block-end: 0;"{"+16.5% Heat"}
-                div class="cellbuttondiv" {
-                    button class="cellbutton" {"Edit"}
+                div class="cellfooterdiv" {
+                    button class="cellbutton" hx-post="/edit" hx-target="#edit_screen" hx-swap="outerHTML" {"Edit"}
                     button class="cellbutton" style="background-color: #ff4444;" {"Delete"}
+                    img src="/wfm_favicon.ico";
                 }
             }
         }
+        div id="edit_screen";
     }
 }
 
 pub fn uri_home() -> Response<Cursor<Vec<u8>>> {
     let pagecontent = rivens();
+    tiny_http::Response::from_string(pagecontent.into_string()).with_header(tiny_http::Header {
+        field: "Content-Type".parse().unwrap(),
+        value: AsciiString::from_ascii("text/html; charset=utf8").unwrap(),
+    })
+}
+
+pub fn uri_edit(edit_toggle: &mut EditToggle) ->  Response<Cursor<Vec<u8>>> {
+    let height = format!("height: calc(126px + (2.2em * {}));", 2);
+    let pagecontent = if !edit_toggle.0 {
+        edit_toggle.0 = true;
+        html! {
+            div id="edit_screen" style="display: block;" {
+                // div class="cell" {
+                //     div class="celltitle" {
+                //         "Edit Riven"
+                //     }
+                //     hr {}
+                //         p style="text-align: center;"{"+16.5% Heat"}
+                //         p style="text-align: center; margin-block-start: 0; margin-block-end: 0;"{"+16.5% Heat"}
+                //     div class="cellbuttondiv" {
+                //         button class="cellbutton" hx-post="/edit" hx-target="#edit_screen" hx-swap="outerHTML" {"Save"}
+                //         button class="cellbutton" hx-post="/edit" hx-target="#edit_screen" hx-swap="outerHTML" {"Cancel"}
+                //     }
+                // }
+            }
+        }
+    } else {
+        edit_toggle.0 = false;
+        html! {
+            div id="edit_screen" style="display: none;";
+        }
+    };
     tiny_http::Response::from_string(pagecontent.into_string()).with_header(tiny_http::Header {
         field: "Content-Type".parse().unwrap(),
         value: AsciiString::from_ascii("text/html; charset=utf8").unwrap(),

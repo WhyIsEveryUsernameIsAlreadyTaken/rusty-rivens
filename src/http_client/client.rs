@@ -256,12 +256,14 @@ async fn collect_payload_chunk(
 impl RequestBuilder {
     async fn send(&mut self, stream: &mut TlsStream<TcpStream>) -> Result<Response, SendError> {
         let req = self.build_request()?;
+        let req = req.as_bytes();
 
         let mut out = String::new();
         stream
-            .write_all(req.as_bytes())
+            .write_all(req)
             .await
             .map_err(|e| SendError::IoError(e))?;
+        println!("{} bytes written.", req.len());
         let mut reader = BufReader::new(stream);
         if let Some(v) = reader.read_line(&mut out).timeout(self.inner.timeout).await {
             v.map_err(|e| SendError::IoError(e))?;
