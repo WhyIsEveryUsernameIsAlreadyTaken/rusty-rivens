@@ -1,9 +1,16 @@
-use std::{error::Error, fmt::{self, Display}, sync::Arc, thread};
+use std::{error::Error, fmt::{self, Display}, ops::Deref, rc::Rc, sync::Arc, thread};
 
 use dotenv::dotenv;
+
 use once_cell::sync::OnceCell;
 use serde::Deserialize;
 use server::start_server;
+use tao::{
+    event::{Event, StartCause, WindowEvent},
+    event_loop::{ControlFlow, EventLoop},
+    window::WindowBuilder,
+  };
+use wry::WebViewBuilder;
 
 mod pages;
 mod resources;
@@ -47,21 +54,37 @@ impl AppError {
 
 impl Error for AppError {}
 
-fn main() {
+fn main() -> wry::Result<()> {
     dotenv().unwrap(); // creds
     // START SERVER ON SEPERATE THREAD
-    let server = thread::spawn(move || start_server().unwrap());
+    // let server = thread::spawn(move || start_server().unwrap());
+    let event_loop = EventLoop::new();
+    let window = WindowBuilder::new()
+        .with_title("Rusty Rivens v0.0.1")
+        .build(&event_loop).unwrap();
 
-    web_view::builder()
-        .title("Rusty Rivens v0.0.1")
-        .content(web_view::Content::Url("http://127.0.0.1:8000/"))
-        .size(1280, 720)
-        .resizable(true)
-        .debug(true)
-        .user_data(())
-        .invoke_handler(|_webview, _arg| Ok(()))
-        .run().unwrap();
+    let _webview = WebViewBuilder::new(&window)
+        .with_url("https://tauri.app")
+        .with_user_agent("Rusty Rivens v0.0.1")
+        .with_devtools(true)
+        .with_visible(true)
+        .with_transparent(false)
+        .with_focused(true)
+        .build()?;
 
-    STOPPED.set(true).unwrap();
-    server.join().unwrap();
+    event_loop.run(move |event, _, control_flow| {
+        *control_flow = ControlFlow::Wait;
+        println!("I hate this framework");
+        match event {
+            Event::NewEvents(StartCause::Init) => println!("I hate this framework"),
+            Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                ..
+            } => {
+                STOPPED.set(true).unwrap();
+                *control_flow = ControlFlow::Exit
+            },
+            _ => ()
+        }
+    });
 }

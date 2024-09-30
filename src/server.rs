@@ -46,10 +46,10 @@ pub(crate) fn start_server() -> Result<(), AppError> {
     let head = rq.headers().iter().find(|&v| v.field.equiv("User-Agent"));
     let head = head.unwrap().value.clone();
     USER.set(User(Some(head))).unwrap();
-    // println!("received request! method: {:?}, url: {:?}",
-    //     rq.method(),
-    //     rq.url(),
-    // );
+    println!("received request! method: {:?}, url: {:?}",
+        rq.method(),
+        rq.url(),
+    );
     let rs = match_uri(
         rq.url(),
         None,
@@ -69,10 +69,10 @@ pub(crate) fn start_server() -> Result<(), AppError> {
 
     loop {
         if let Some(mut rq) = s.try_recv().unwrap() {
-            // println!("received request! method: {:?}, url: {:?}",
-            //     rq.method(),
-            //     rq.url(),
-            // );
+            println!("received request! method: {:?}, url: {:?}",
+                rq.method(),
+                rq.url(),
+            );
             if let User(Some(u)) = USER.get().unwrap() {
                 if &rq.headers().iter().find(|&v| v.field.equiv("User-Agent")).unwrap().value != u {
                     let r = uri_unauthorized();
