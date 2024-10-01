@@ -6,10 +6,10 @@ use once_cell::sync::OnceCell;
 use serde::Deserialize;
 use server::start_server;
 use tao::{
-    event::{Event, StartCause, WindowEvent},
+    event::{Event, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
-  };
+};
 use wry::WebViewBuilder;
 
 mod pages;
@@ -55,36 +55,60 @@ impl AppError {
 impl Error for AppError {}
 
 fn main() -> wry::Result<()> {
-    dotenv().unwrap(); // creds
-    // START SERVER ON SEPERATE THREAD
-    // let server = thread::spawn(move || start_server().unwrap());
+    let server = thread::spawn(|| start_server().unwrap());
     let event_loop = EventLoop::new();
-    let window = WindowBuilder::new()
-        .with_title("Rusty Rivens v0.0.1")
-        .build(&event_loop).unwrap();
+    let window = WindowBuilder::new().build(&event_loop).unwrap();
 
-    let _webview = WebViewBuilder::new(&window)
-        .with_url("https://tauri.app")
-        .with_user_agent("Rusty Rivens v0.0.1")
-        .with_devtools(true)
-        .with_visible(true)
-        .with_transparent(false)
-        .with_focused(true)
+    #[cfg(any(
+        target_os = "windows",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "android"
+    ))]
+    let builder = WebViewBuilder::new(&window);
+
+    #[cfg(not(any(
+        target_os = "windows",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "android"
+    )))]
+    let builder = {
+        use tao::platform::unix::WindowExtUnix;
+        use wry::WebViewBuilderExtUnix;
+        let vbox = window.default_vbox().unwrap();
+        WebViewBuilder::new_gtk(vbox)
+    };
+
+    let _webview = builder
+        .with_url("http://127.0.0.1:8000")
+        .with_drag_drop_handler(|e| {
+            match e {
+                wry::DragDropEvent::Enter { paths, position } => {
+                    println!("DragEnter: {position:?} {paths:?} ")
+                }
+                wry::DragDropEvent::Over { position } => println!("DragOver: {position:?} "),
+                wry::DragDropEvent::Drop { paths, position } => {
+                    println!("DragDrop: {position:?} {paths:?} ")
+                }
+                wry::DragDropEvent::Leave => println!("DragLeave"),
+                _ => {}
+            }
+
+            true
+        })
         .build()?;
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
-        println!("I hate this framework");
-        match event {
-            Event::NewEvents(StartCause::Init) => println!("I hate this framework"),
-            Event::WindowEvent {
-                event: WindowEvent::CloseRequested,
-                ..
-            } => {
-                STOPPED.set(true).unwrap();
-                *control_flow = ControlFlow::Exit
-            },
-            _ => ()
+
+        if let Event::WindowEvent {
+            event: WindowEvent::CloseRequested,
+            ..
+        } = event
+        {
+            STOPPED.set(true).unwrap();
+            *control_flow = ControlFlow::Exit
         }
     });
 }

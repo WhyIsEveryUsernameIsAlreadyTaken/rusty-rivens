@@ -97,18 +97,21 @@ pub fn uri_edit(edit_toggle: &mut EditToggle) ->  Response<Cursor<Vec<u8>>> {
         edit_toggle.0 = true;
         html! {
             div id="edit_screen" style="display: block;" {
-                // div class="cell" {
-                //     div class="celltitle" {
-                //         "Edit Riven"
-                //     }
-                //     hr {}
-                //         p style="text-align: center;"{"+16.5% Heat"}
-                //         p style="text-align: center; margin-block-start: 0; margin-block-end: 0;"{"+16.5% Heat"}
-                //     div class="cellbuttondiv" {
-                //         button class="cellbutton" hx-post="/edit" hx-target="#edit_screen" hx-swap="outerHTML" {"Save"}
-                //         button class="cellbutton" hx-post="/edit" hx-target="#edit_screen" hx-swap="outerHTML" {"Cancel"}
-                //     }
-                // }
+                div class="row_overlay" {
+                    div id="edit_screen_gui" style=(height) {
+                        div class="celltitle" {
+                            "Edit Riven"
+                        }
+                        hr {}
+                            p style="text-align: center;"{"+16.5% Heat"}
+                            p style="text-align: center; margin-block-start: 0; margin-block-end: 0;"{"+16.5% Heat"}
+                        div class="cellbuttondiv" {
+                            button class="cellbutton" hx-post="/edit" hx-target="#edit_screen" hx-swap="outerHTML" {"Save"}
+                            button class="cellbutton" hx-post="/edit" hx-target="#edit_screen" hx-swap="outerHTML" {"Cancel"}
+                        }
+                    }
+                }
+
             }
         }
     } else {

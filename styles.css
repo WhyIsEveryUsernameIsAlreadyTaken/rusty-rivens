@@ -36,6 +36,29 @@
     z-index: 2; /* Specify a stack order in case you're using a different order for other elements */
 }
 
+.row_overlay {
+margin: 0;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  -ms-transform: translate(-50%, -50%);
+  transform: translate(-50%, -50%);
+}
+
+#edit_screen_gui {
+    width: 150%;
+    border-radius: 16px;
+    border: 2px solid #4f4f4f;
+    background-color: #1f1f1f;
+    transition: border-color 0.25s;
+    position: relative;
+    display: inline-block;
+    font-size: 1.2em;
+    margin-left: 5vh;
+    font-weight: 550;
+    font-family: inherit;
+}
+
 .cell {
     width: 300px;
     border-radius: 16px;
