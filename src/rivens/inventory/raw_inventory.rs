@@ -12,7 +12,7 @@ type DecryptThingy = cbc::Decryptor<aes::Aes128>;
 pub enum InventoryDecryptError {
     DecryptorError(UnpadError),
     ParseError(ParseErrorType),
-    IoError(io::Error, String),
+    IoError(io::Error, PathBuf),
     EnvVarError(VarError),
     DeserializeError(serde_json::Error),
     OtherError(Arc<str>),
@@ -24,7 +24,7 @@ impl Display for InventoryDecryptError {
         let err = match self {
             InventoryDecryptError::DecryptorError(e) => format!("DecryptorError: {}", e),
             InventoryDecryptError::ParseError(e) => format!("ParseError: {}", e),
-            InventoryDecryptError::IoError(e, path) => format!("IoErrort: {}, {}", e, path),
+            InventoryDecryptError::IoError(e, path) => format!("IoErrort: {}, {}", e, path.to_str().unwrap()),
             InventoryDecryptError::EnvVarError(e) => format!("EnvVarErrort: {}", e),
             InventoryDecryptError::DeserializeError(e) => format!("DeserializeErrort: {}", e),
             InventoryDecryptError::OtherError(e) => String::from(e.deref()),
@@ -55,9 +55,9 @@ pub fn decrypt_last_data<'a>(custom_path: Option<&str>) -> Result<Vec<Upgrades>,
     } else {
         PathBuf::from("lastData.dat")
     };
-    let mut file = File::open(path).map_err(|e| InventoryDecryptError::IoError(e, custom_path.unwrap().to_string()))?;
+    let mut file = File::open(path.clone()).map_err(|e| InventoryDecryptError::IoError(e, path))?;
     let mut ciphertext: Vec<u8> = vec![];
-    file.read_to_end(&mut ciphertext).map_err(|e| InventoryDecryptError::IoError(e, "".to_string()))?;
+    file.read_to_end(&mut ciphertext).map_err(|e| InventoryDecryptError::IoError(e, "".into()))?;
 
     let key_var = env::var("KEY").map_err(|e| InventoryDecryptError::EnvVarError(e))?;
     let mut key: Vec<u8> = Vec::with_capacity(16);

@@ -566,19 +566,23 @@ fn lookup_riven_data<'a>(
 
 #[cfg(test)]
 mod tests {
-    use std::{ops::DerefMut, sync::Arc};
+    use std::{fs::File, io::Write, ops::DerefMut, sync::Arc};
 
     use async_lock::Mutex;
-    use serde_json::from_value;
+    use serde_json::{from_value, to_value};
 
-    use crate::{http_client::{client::{HttpClient, Method}, qf_client::QFClient}, rivens::inventory::{raw_inventory::decrypt_last_data, riven_lookop::RivenDataLookup}};
+    use crate::{http_client::{client::{HttpClient, Method}, qf_client::QFClient}, rivens::inventory::{database::Auction, raw_inventory::decrypt_last_data, riven_lookop::RivenDataLookup}};
 
     use super::convert_inventory_data;
 
-    async fn test_convert_inventory_data() {
+    #[test]
+    fn test_convert_inventory_data() {
         let lookup = RivenDataLookup::setup().unwrap();
         let raw_upgrades = decrypt_last_data(None).unwrap();
-        let _ = convert_inventory_data(&lookup, raw_upgrades).await;
+        let items = smolscale::block_on(async move {convert_inventory_data(&lookup, raw_upgrades).await});
+        let out = to_value(items).unwrap();
+        let mut file = File::open("rivenData.json").unwrap();
+        file.write_all(out.to_string().as_bytes()).unwrap();
         // println!("{:#?}", items);
     }
 }
