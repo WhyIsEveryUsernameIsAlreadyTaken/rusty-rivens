@@ -40,8 +40,6 @@ pub(crate) fn start_server() -> Result<(), AppError> {
     let wfm_client = WFMClient::new(auth_state);
     let wfm_client = Arc::new(Mutex::new(wfm_client));
 
-    LOGGED_IN.set(true).unwrap();
-
     let rq = s.recv().unwrap();
     let head = rq.headers().iter().find(|&v| v.field.equiv("User-Agent"));
     let head = head.unwrap().value.clone();
@@ -65,7 +63,7 @@ pub(crate) fn start_server() -> Result<(), AppError> {
         )?;
 
     let db = Arc::new(Mutex::new(db));
-    let lookup = // Arc::new(RivenDataLookup::setup().unwrap());
+    // let lookup = Arc::new(RivenDataLookup::setup().unwrap());
 
     loop {
         if let Some(mut rq) = s.try_recv().unwrap() {

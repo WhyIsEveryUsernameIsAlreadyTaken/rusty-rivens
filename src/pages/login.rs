@@ -21,7 +21,7 @@ struct Login {
 
 pub fn uri_login() -> Response<Cursor<Vec<u8>>> {
     let pagecontent = html! {
-        div hx-trigger="LoginSuccess from:body" hx-swap="outerHTML" hx-get="/home" {
+        div id="login_screen" hx-trigger="LoginSuccess from:body" hx-swap="outerHTML" hx-get="/home" {
             div class="row" {
                 img src="/logo.svg" class="logo";
             }
@@ -85,7 +85,7 @@ pub fn uri_login_req(
         html! {p id="login_failed" style="text-align: center; color: red;" {b {"Login Failed, Please try again"}}}
     } else {
         LOGGED_IN.set(authorized).unwrap();
-        html! {"sdjfhsdjfh"}
+        html! {""}
     };
     let r = tiny_http::Response::from_string(pagecontent.into_string()).with_header(
         tiny_http::Header {
