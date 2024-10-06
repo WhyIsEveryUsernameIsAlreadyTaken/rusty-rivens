@@ -3,3 +3,16 @@
 /Cargo.lock
 /auth.json
 /dist/
+/dummy.txt
+/htmx.min.js
+/inventory.sqlite3
+/lastData.dat
+/lastDataAdded.dat
+/lastDataControl.dat
+/lastDataSubtracted.dat
+/out
+/out.txt
+/pkgs.txt
+/rivenData.json
+/src/rivens/inventory/mock_riven_lookup.json
+/todo
