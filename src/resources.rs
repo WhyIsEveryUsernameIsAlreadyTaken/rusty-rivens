@@ -42,6 +42,7 @@ pub fn uri_htmx(rq: Request) -> io::Result<()> {
         .with_header(tiny_http::Header {
             field: "ETag".parse().unwrap(),
             value: AsciiString::from_ascii(format!("{:x}", hash))
+
                 .unwrap(),
         }))
 }

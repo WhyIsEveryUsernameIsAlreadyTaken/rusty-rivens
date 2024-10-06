@@ -58,5 +58,5 @@ pub fn uri_api_login(
 }
 
 pub fn uri_api_delete_riven(rq: Request, id: &str) -> Result<(), AppError> {
-    todo!()
+    rq.respond(tiny_http::Response::empty(200)).map_err(|e| AppError::new(e.to_string(), "uri_api_delete_riven".to_string()))
 }

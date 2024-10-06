@@ -137,41 +137,38 @@ fn handle_request(
     edit_toggle: &mut bool,
     logged_in: &mut Option<bool>,
 ) -> Result<(), AppError> {
-    if let Some((root, other)) = uri.split_once('/') {
-        match root {
-            "" | "/" => {
-                uri_main(rq, wfm, logged_in)
-            }
-            "htmx.min.js" => {
-                uri_htmx(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
-            }
-            "styles.css" => {
-                uri_styles(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
-            }
-            "api" => {
-                match_uri_api(rq, other, body, wfm, logged_in)
-            }
-            "login" => {
-                uri_login(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
-            }
-            "home" => {
-                uri_home(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
-            }
-            "edit" => {
-                uri_edit(rq, edit_toggle).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
-            }
-            "logo.svg" => {
-                uri_logo(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
-            }
-            "wfm_favicon.ico" => {
-                uri_wfmlogo(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
-            }
-            _ => {
-                uri_not_found(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
-            }
+    let (root, other) = uri[1..].split_once('/').unwrap_or((&uri[1..], ""));
+    match root {
+        "" | "/" => {
+            uri_main(rq, wfm, logged_in).map_err(|e| e.prop("handle_request".into()))
         }
-    } else {
-        uri_not_found(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
+        "htmx.min.js" => {
+            uri_htmx(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
+        }
+        "styles.css" => {
+            uri_styles(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
+        }
+        "api" => {
+            match_uri_api(rq, other, body, wfm, logged_in).map_err(|e| e.prop("handle_request".into()))
+        }
+        "login" => {
+            uri_login(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
+        }
+        "home" => {
+            uri_home(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
+        }
+        "edit" => {
+            uri_edit(rq, edit_toggle).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
+        }
+        "logo.svg" => {
+            uri_logo(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
+        }
+        "wfm_favicon.ico" => {
+            uri_wfmlogo(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
+        }
+        _ => {
+            uri_not_found(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
+        }
     }
 }
 
@@ -182,19 +179,16 @@ fn match_uri_api(
     wfm: Arc<Mutex<WFMClient>>,
     logged_in: &mut Option<bool>
 ) -> Result<(), AppError> {
-    if let Some((left, right)) = uri.split_once('/') {
-        match left {
-            "login" => {
-                uri_api_login(rq, body.unwrap(), wfm.clone(), logged_in)
-            }
-            "delete_riven" => {
-                uri_api_delete_riven(rq, right)
-            }
-            _ => {
-                uri_not_found(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
-            }
+    let (root, other) = uri.split_once('/').unwrap_or((uri, ""));
+    match root {
+        "login" => {
+            uri_api_login(rq, body.unwrap(), wfm.clone(), logged_in).map_err(|e| e.prop("match_uri_api".into()))
         }
-    } else {
-        uri_not_found(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
+        "delete_riven" => {
+            uri_api_delete_riven(rq, other).map_err(|e| e.prop("match_uri_api".into()))
+        }
+        _ => {
+            uri_not_found(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
+        }
     }
 }

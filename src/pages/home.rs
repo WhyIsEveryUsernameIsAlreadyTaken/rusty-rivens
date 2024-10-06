@@ -79,6 +79,7 @@ pub fn rivens() -> PreEscaped<String> {
             }
         });
         let oid = riven.oid.clone();
+        let uri = format!("/api/delete_riven/{oid}");
 
         // let height = format!("height: calc(126px + (2.2em * {}));", riven.attributes.len());
         html! {
@@ -94,7 +95,7 @@ pub fn rivens() -> PreEscaped<String> {
                 div class="cellfooterdiv" {
                     div style="float: left;" {
                         button class="cellbutton" hx-post="/edit" hx-target="#edit_screen" hx-swap="outerHTML" {"Edit"}
-                        button class="cellbutton" style="background-color: #ff4444;" {"Delete"}
+                        button class="cellbutton" hx-delete=(uri) hx-target="closest .cell" hx-swap="outerHTML" style="background-color: #ff4444;" {"Delete"}
                     }
                     // img src="/wfm_favicon.ico" style="float: right; margin-left: 23px; padding-right: 13px;";
                 }
@@ -138,7 +139,6 @@ pub fn uri_edit(rq: Request, edit_toggle: &mut bool) -> io::Result<()> {
                         }
                     }
                 }
-
             }
         }
     } else {
