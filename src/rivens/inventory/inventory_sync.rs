@@ -90,7 +90,7 @@ mod tests {
         let added_items = Some(decrypt_last_data(Some("lastDataAdded.dat")).unwrap());
         let subtracted_items = Some(decrypt_last_data(Some("lastDataSubtracted.dat")).unwrap());
         let lookup = test_sync_setup_lookup();
-        let db = database::InventoryDB::open("test_db.sqlite").unwrap();
+        let db = database::InventoryDB::open("test_db.sqlite3").unwrap();
         let db = Arc::new(Mutex::new(db));
 
         let (init, _, same) = smolscale::block_on( {
@@ -126,6 +126,6 @@ mod tests {
         assert_eq!(removed, 2, "{removed}");
         drop(db);
 
-        std::fs::remove_file("test_db.sqlite").unwrap();
+        std::fs::remove_file("test_db.sqlite3").unwrap();
     }
 }

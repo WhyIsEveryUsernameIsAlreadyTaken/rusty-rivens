@@ -38,13 +38,13 @@ impl Default for Auction {
     }
 }
 
-static SQL_TABLE_ITEMS: &str = "CREATE TABLE IF NOT EXISTS items ( item_id text primary key, mastery_level integer, name text, polarity text, weapon_url_name text, re_rolls integer, mod_rank integer)";
-static SQL_TABLE_ATTRIBUTES: &str = "CREATE TABLE IF NOT EXISTS attributes ( item_id text, value float, positive bit, url_name text)";
+static SQL_TABLE_ITEMS: &str = "CREATE TABLE IF NOT EXISTS items ( item_id text primary key, mastery_level integer, name text, weapon_name text, polarity text, weapon_url_name text, re_rolls integer, mod_rank integer)";
+static SQL_TABLE_ATTRIBUTES: &str = "CREATE TABLE IF NOT EXISTS attributes ( item_id text, value float, positive bit, url_name text, short_string text)";
 static SQL_TABLE_AUCTIONS: &str = "CREATE TABLE IF NOT EXISTS auctions ( item_id text primary key, wfm_id text, starting_price integer, buyout_price integer, owner text, updated datetime, is_direct_sell bit)";
 
-static SQL_ATTRIBUTE_INSERT: &str = "INSERT INTO attributes ( item_id, value, positive, url_name) values (?1, ?2, ?3, ?4)";
+static SQL_ATTRIBUTE_INSERT: &str = "INSERT INTO attributes ( item_id, value, positive, url_name, short_string) values (?1, ?2, ?3, ?4)";
 static SQL_AUCTION_INSERT: &str = "INSERT INTO auctions ( oid, wfm_id, starting_price, buyout_price, owner, updated, is_direct_sell) values (?1, ?2, ?3, ?4, ?5, ?6, ?7)";
-static SQL_ITEM_INSERT: &str = "INSERT INTO items ( item_id, mastery_level, name, polarity, weapon_url_name, re_rolls, mod_rank) values (?1, ?2, ?3, ?4, ?5, ?6, ?7)";
+static SQL_ITEM_INSERT: &str = "INSERT INTO items ( item_id, mastery_level, name, weapon_name, polarity, weapon_url_name, re_rolls, mod_rank) values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)";
 
 static SQL_SELECT_ITEMS: &str = "SELECT * FROM items";
 static SQL_SELECT_ATTRIBUTES: &str = "SELECT * FROM attributes WHERE item_id = ?1";
@@ -101,7 +101,8 @@ impl InventoryDB {
                 &oid,
                 &attr.value,
                 &attr.positive,
-                &attr.url_name
+                &attr.url_name,
+                &attr.short_string,
             ]);
             if res.is_err() {
                 Err(res.unwrap_err())
@@ -118,6 +119,7 @@ impl InventoryDB {
                 &item.oid,
                 &item.mastery_level,
                 &item.name,
+                &item.weapon_name,
                 &item.polarity,
                 &item.weapon_url_name,
                 &item.re_rolls,
@@ -152,6 +154,7 @@ impl InventoryDB {
             Ok(Item {
                 mastery_level: row.get("mastery_level")?,
                 name: row.get("name")?,
+                weapon_name: row.get("weapon_name")?,
                 polarity: row.get("polarity")?,
                 attributes: vec![],
                 weapon_url_name: row.get("weapon_url_name")?,
@@ -176,6 +179,7 @@ impl InventoryDB {
                 value: row.get("value")?,
                 positive: row.get("positive")?,
                 url_name: row.get("url_name")?,
+                short_string: row.get("short_string")?,
             })
         })?.try_fold(vec![], |mut acc, attr| -> Result<Vec<Attribute>, rusqlite::Error> {
                 acc.push(attr?);

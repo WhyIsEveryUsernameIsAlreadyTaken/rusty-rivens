@@ -16,6 +16,7 @@ pub struct RivenDataLookup {
 pub struct Weapon {
     pub wfm_url_name: Option<Arc<str>>,
     pub unique_name: Option<Arc<str>>,
+    pub name: Option<Arc<str>>,
     pub disposition: Option<f64>,
     pub upgrade_type: Option<Arc<str>>
 }
@@ -29,6 +30,7 @@ pub struct RivensAttribute {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Upgrade {
     pub wfm_url: Option<Arc<str>>,
+    pub short_string: Option<Arc<str>>,
     pub modifier_tag: Option<Arc<str>>,
     pub prefix: Option<Arc<str>>,
     pub suffix: Option<Arc<str>>,

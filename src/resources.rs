@@ -1,13 +1,13 @@
-use std::io::Cursor;
+use std::io::{self, Cursor};
 use ascii::AsciiString;
-use tiny_http::Response;
+use tiny_http::{Request, Response};
 
 use crate::file_consts::{HTMX, LOGO, WFMLOGO, STYLES};
 
-pub fn uri_styles() -> Response<Cursor<Vec<u8>>> {
+pub fn uri_styles(rq: Request) -> io::Result<()> {
     let hash = md5::compute(STYLES);
 
-    tiny_http::Response::from_string(STYLES)
+    rq.respond(tiny_http::Response::from_string(STYLES)
         .with_header(tiny_http::Header {
             field: "Content-Type".parse().unwrap(),
             value: AsciiString::from_ascii("text/css; charset=utf8")
@@ -22,13 +22,13 @@ pub fn uri_styles() -> Response<Cursor<Vec<u8>>> {
             field: "ETag".parse().unwrap(),
             value: AsciiString::from_ascii(format!("{:x}", hash))
                 .unwrap(),
-        })
+        }))
 }
 
-pub fn uri_htmx() -> Response<Cursor<Vec<u8>>> {
+pub fn uri_htmx(rq: Request) -> io::Result<()> {
     let hash = md5::compute(HTMX);
 
-    tiny_http::Response::from_string(HTMX)
+    rq.respond(tiny_http::Response::from_string(HTMX)
         .with_header(tiny_http::Header {
             field: "Content-Type".parse().unwrap(),
             value: AsciiString::from_ascii("text/javascript; charset=utf8")
@@ -43,13 +43,13 @@ pub fn uri_htmx() -> Response<Cursor<Vec<u8>>> {
             field: "ETag".parse().unwrap(),
             value: AsciiString::from_ascii(format!("{:x}", hash))
                 .unwrap(),
-        })
+        }))
 }
 
-pub fn uri_logo() -> Response<Cursor<Vec<u8>>> {
+pub fn uri_logo(rq: Request) -> io::Result<()> {
     let hash = md5::compute(LOGO);
 
-    tiny_http::Response::from_data(LOGO)
+    rq.respond(tiny_http::Response::from_data(LOGO)
         .with_header(tiny_http::Header {
             field: "Content-Type".parse().unwrap(),
             value: AsciiString::from_ascii("image/svg+xml")
@@ -64,13 +64,13 @@ pub fn uri_logo() -> Response<Cursor<Vec<u8>>> {
             field: "ETag".parse().unwrap(),
             value: AsciiString::from_ascii(format!("{:x}", hash))
                 .unwrap(),
-        })
+        }))
 }
 
-pub fn uri_wfmlogo() -> Response<Cursor<Vec<u8>>> {
+pub fn uri_wfmlogo(rq: Request) -> io::Result<()> {
     let hash = md5::compute(WFMLOGO);
 
-    tiny_http::Response::from_data(WFMLOGO)
+    rq.respond(tiny_http::Response::from_data(WFMLOGO)
         .with_header(tiny_http::Header {
             field: "Content-Type".parse().unwrap(),
             value: AsciiString::from_ascii("image/ico")
@@ -85,5 +85,5 @@ pub fn uri_wfmlogo() -> Response<Cursor<Vec<u8>>> {
             field: "ETag".parse().unwrap(),
             value: AsciiString::from_ascii(format!("{:x}", hash))
                 .unwrap(),
-        })
+        }))
 }

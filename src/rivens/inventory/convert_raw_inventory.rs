@@ -56,6 +56,7 @@ pub struct Curses {
 pub struct Item {
     pub mastery_level: u8,
     pub name: Arc<str>,
+    pub weapon_name: Arc<str>,
     pub polarity: Arc<str>,
     pub attributes: Vec<Attribute>,
     pub weapon_url_name: Arc<str>,
@@ -76,6 +77,7 @@ impl Default for Item {
             re_rolls: 0,
             oid: "".into(),
             mod_rank: 0,
+            weapon_name: "".into(),
         }
     }
 }
@@ -85,6 +87,7 @@ pub struct Attribute {
     pub value: f64,
     pub positive: bool,
     pub url_name: String,
+    pub short_string: String,
 }
 
 #[derive(Debug)]
@@ -100,6 +103,7 @@ struct AttributeInfo {
     value: i32,
     units: Units,
     wfm_url: Arc<str>,
+    short_string: Arc<str>,
     prefix: Arc<str>,
     suffix: Arc<str>,
     base_value: f64,
@@ -159,7 +163,7 @@ pub async fn convert_inventory_data(
             });
         });
 
-        let (_weapon_url_name, weapon_type, disposition) = match lookup_weapon_data(
+        let (_weapon_url_name, weapon_name, weapon_type, disposition) = match lookup_weapon_data(
             lookup,
             upgrade.upgrade_fingerprint.compat.as_ref().unwrap().deref(),
         ) {
@@ -198,6 +202,7 @@ pub async fn convert_inventory_data(
         items.push(Item {
             mastery_level: upgrade.upgrade_fingerprint.lvl_req,
             name: name.into(),
+            weapon_name: weapon_name.into(),
             polarity: polarity.into(),
             attributes: _attributes,
             weapon_url_name: _weapon_url_name.into(),
@@ -210,7 +215,7 @@ pub async fn convert_inventory_data(
 }
 
 fn parse_riven_name(attributes_info: &Vec<AttributeInfo>, num_buffs: usize) -> String {
-    if num_buffs == 2 {
+    let name = if num_buffs == 2 {
         format!("{}{}", attributes_info[0].prefix, attributes_info[1].suffix)
     } else if num_buffs == 3 {
         format!(
@@ -219,7 +224,10 @@ fn parse_riven_name(attributes_info: &Vec<AttributeInfo>, num_buffs: usize) -> S
         )
     } else {
         panic!("no buffs with the associated riven!")
-    }
+    };
+    let mut chars = name.chars();
+    let first = chars.next().expect("there should be a character here");
+    format!("{}{}", first.to_uppercase().collect::<String>(), chars.collect::<String>())
 }
 
 fn calculate_attributes(
@@ -246,10 +254,14 @@ fn calculate_attributes(
             Units::Multiply => (value + 100.0).round() / 100.0,
             _ => (value * 10.0).round() / 10.0,
         };
+        println!("old: {}", attr.short_string);
+        let (_, short_string) = attr.short_string.split_once('>').unwrap_or(("", attr.short_string.deref()));
+        println!("new: {}", short_string);
         attributes.push(Attribute {
             value,
             positive: attr.positive,
-            url_name: attr.wfm_url.clone().to_string(),
+            short_string: short_string.to_string(),
+            url_name: attr.wfm_url.to_string(),
         });
     });
     attributes
@@ -299,7 +311,7 @@ enum WeaponLookupField {
 fn lookup_weapon_data(
     lookup: &RivenDataLookup,
     compat: &str,
-) -> Result<(String, String, f64), WeaponLookupError> {
+) -> Result<(String, String, String, f64), WeaponLookupError> {
     if lookup.weapons.is_none() {
         return Err(WeaponLookupError::InvalidField(WeaponLookupField::Weapons));
     }
@@ -325,6 +337,14 @@ fn lookup_weapon_data(
                 ))
             }
         };
+        let name = match weapon.name.as_ref() {
+            Some(v) => v.deref(),
+            None => {
+                return Err(WeaponLookupError::InvalidField(
+                    WeaponLookupField::WeaponUrlName,
+                ))
+            }
+        };
         let disposition = match weapon.disposition {
             Some(v) => v,
             None => {
@@ -343,6 +363,7 @@ fn lookup_weapon_data(
         };
         return Ok((
             url_name.to_string(),
+            name.to_string(),
             weapon_type.deref().into(),
             disposition,
         ));
@@ -378,6 +399,7 @@ impl<'a> Display for RivenLookupError<'a> {
                         RivenLookupField::ModifierTag => "ModifierTag",
                         RivenLookupField::Upgrades => "Upgrades",
                         RivenLookupField::WfmUrl => "WfmUrl",
+                        RivenLookupField::ShortString => "ShortString",
                         RivenLookupField::PrefixTag => "PrefixTag",
                         RivenLookupField::SuffixTag => "SuffixTag",
                         RivenLookupField::BaseValue => "BaseValue",
@@ -399,6 +421,7 @@ enum RivenLookupField {
     ModifierTag,
     Upgrades,
     WfmUrl,
+    ShortString,
     PrefixTag,
     SuffixTag,
     BaseValue,
@@ -536,6 +559,10 @@ fn lookup_riven_data<'a>(
                 Some(v) => v,
                 None => return Err(RivenLookupError::InvalidField(RivenLookupField::WfmUrl)),
             };
+            let short_string = match upgrade.short_string.clone() {
+                Some(v) => v,
+                None => return Err(RivenLookupError::InvalidField(RivenLookupField::ShortString)),
+            };
             let prefix = match upgrade.prefix.clone() {
                 Some(v) => v,
                 None => return Err(RivenLookupError::InvalidField(RivenLookupField::PrefixTag)),
@@ -558,6 +585,7 @@ fn lookup_riven_data<'a>(
                 suffix: suffix.clone(),
                 base_value,
                 units,
+                short_string,
             });
             Ok(())
         })?;
@@ -569,6 +597,7 @@ mod tests {
     use std::{fs::File, io::Write, ops::DerefMut, sync::Arc};
 
     use async_lock::Mutex;
+    use dotenv::dotenv;
     use serde_json::{from_value, to_value};
 
     use crate::{http_client::{client::{HttpClient, Method}, qf_client::QFClient}, rivens::inventory::{database::Auction, raw_inventory::decrypt_last_data, riven_lookop::RivenDataLookup}};
@@ -577,11 +606,12 @@ mod tests {
 
     #[test]
     fn test_convert_inventory_data() {
+        dotenv().unwrap();
         let lookup = RivenDataLookup::setup().unwrap();
         let raw_upgrades = decrypt_last_data(None).unwrap();
         let items = smolscale::block_on(async move {convert_inventory_data(&lookup, raw_upgrades).await});
         let out = to_value(items).unwrap();
-        let mut file = File::open("rivenData.json").unwrap();
+        let mut file = File::create("rivenData.json").unwrap();
         file.write_all(out.to_string().as_bytes()).unwrap();
         // println!("{:#?}", items);
     }

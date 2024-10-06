@@ -2,19 +2,30 @@ use ascii::AsciiString;
 use async_lock::Mutex;
 use once_cell::sync::OnceCell;
 use std::{fs, io::{self, Cursor}, sync::Arc, time::SystemTime};
-use tiny_http::{Header, Response};
+use tiny_http::{Header, Request, Response};
 
-use crate::{http_client::{auth_state::AuthState, wfm_client::WFMClient}, pages::{home::{uri_edit, uri_home, uri_main, uri_not_found, uri_unauthorized}, login::{uri_login, uri_login_req}}, resources::{uri_htmx, uri_logo, uri_styles, uri_wfmlogo}, rivens::inventory::{database::InventoryDB, inventory_sync::sync_db, riven_lookop::RivenDataLookup}, AppError, STOPPED};
+use crate::{
+    api_operations::{uri_api_delete_riven, uri_api_login}, http_client::{
+        auth_state::AuthState, wfm_client::WFMClient
+    }, pages::{
+        home::{
+            uri_edit, uri_home, uri_main, uri_not_found, uri_unauthorized
+        },
+        login::uri_login
+    }, resources::{
+        uri_htmx,
+        uri_logo,
+        uri_styles,
+        uri_wfmlogo
+    }, rivens::inventory::database::InventoryDB, AppError, STOPPED
+};
 
 #[derive(Debug)]
 struct User(Option<AsciiString>);
 
 static USER: OnceCell<User> = OnceCell::new();
-pub static LOGGED_IN: OnceCell<bool> = OnceCell::new();
 
 struct LastModified(SystemTime, SystemTime);
-
-pub struct EditToggle(pub bool);
 
 impl LastModified {
     fn detect_file_change(&mut self) -> io::Result<bool> {
@@ -30,7 +41,8 @@ impl LastModified {
 
 pub(crate) fn start_server() -> Result<(), AppError> {
     let s = tiny_http::Server::http("127.0.0.1:8000").unwrap();
-    let mut edit_toggle = EditToggle(false);
+    let mut edit_toggle = false;
+    let mut logged_in: Option<bool> = None;
     println!("SERVER STARTED");
     if STOPPED.get().is_some() {
         return Ok(());
@@ -48,16 +60,18 @@ pub(crate) fn start_server() -> Result<(), AppError> {
         rq.method(),
         rq.url(),
     );
-    let rs = match_uri(
-        rq.url(),
-        None,
-        rq.headers(),
+    let uri = rq.url().to_owned();
+    handle_request(
+        rq,
+        uri.as_str(),
         wfm_client.clone(),
-        &mut edit_toggle).map_err(|e| e.prop("start_server".into()))?;
-    rq.respond(rs).unwrap();
+        None,
+        &mut edit_toggle,
+        &mut logged_in,
+    ).map_err(|e| e.prop("start_server".into()))?;
 
     let mut last_modified = LastModified(SystemTime::UNIX_EPOCH, SystemTime::UNIX_EPOCH);
-    let db = InventoryDB::open("inventory.sqlite")
+    let db = InventoryDB::open("inventory.sqlite3")
         .map_err(
             |e| AppError::new(e.to_string(), "start_server: InventoryDB::open".to_string())
         )?;
@@ -73,21 +87,21 @@ pub(crate) fn start_server() -> Result<(), AppError> {
             );
             if let User(Some(u)) = USER.get().unwrap() {
                 if &rq.headers().iter().find(|&v| v.field.equiv("User-Agent")).unwrap().value != u {
-                    let r = uri_unauthorized();
-                    rq.respond(r).unwrap();
+                    uri_unauthorized(rq).unwrap();
                     continue;
                 }
             }
             let mut body = String::new();
             rq.as_reader().read_to_string(&mut body).unwrap();
-            let rs = match_uri(
-                rq.url(),
-                Some(body.as_str()),
-                rq.headers(),
+            let uri = rq.url().to_owned();
+            handle_request(
+                rq,
+                uri.as_str(),
                 wfm_client.clone(),
+                Some(body.as_str()),
                 &mut edit_toggle,
+                &mut logged_in,
             ).map_err(|e| e.prop("start_server: spawn".into()))?;
-            rq.respond(rs).unwrap();
         } else {
             if STOPPED.get() == Some(&true) {
                 break;
@@ -115,43 +129,72 @@ pub(crate) fn start_server() -> Result<(), AppError> {
     Ok(())
 }
 
-fn match_uri(
+fn handle_request(
+    rq: Request,
+    uri: &str,
+    wfm: Arc<Mutex<WFMClient>>,
+    body: Option<&str>,
+    edit_toggle: &mut bool,
+    logged_in: &mut Option<bool>,
+) -> Result<(), AppError> {
+    if let Some((root, other)) = uri.split_once('/') {
+        match root {
+            "" | "/" => {
+                uri_main(rq, wfm, logged_in)
+            }
+            "htmx.min.js" => {
+                uri_htmx(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
+            }
+            "styles.css" => {
+                uri_styles(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
+            }
+            "api" => {
+                match_uri_api(rq, other, body, wfm, logged_in)
+            }
+            "login" => {
+                uri_login(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
+            }
+            "home" => {
+                uri_home(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
+            }
+            "edit" => {
+                uri_edit(rq, edit_toggle).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
+            }
+            "logo.svg" => {
+                uri_logo(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
+            }
+            "wfm_favicon.ico" => {
+                uri_wfmlogo(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
+            }
+            _ => {
+                uri_not_found(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
+            }
+        }
+    } else {
+        uri_not_found(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
+    }
+}
+
+fn match_uri_api(
+    rq: Request,
     uri: &str,
     body: Option<&str>,
-    _headers: &[Header],
     wfm: Arc<Mutex<WFMClient>>,
-    edit_toggle: &mut EditToggle,
-) -> Result<Response<Cursor<Vec<u8>>>, AppError> {
-    match uri {
-        "" | "/" => {
-            uri_main(wfm)
+    logged_in: &mut Option<bool>
+) -> Result<(), AppError> {
+    if let Some((left, right)) = uri.split_once('/') {
+        match left {
+            "login" => {
+                uri_api_login(rq, body.unwrap(), wfm.clone(), logged_in)
+            }
+            "delete_riven" => {
+                uri_api_delete_riven(rq, right)
+            }
+            _ => {
+                uri_not_found(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
+            }
         }
-        "/htmx.min.js" => {
-            Ok(uri_htmx())
-        }
-        "/styles.css" => {
-            Ok(uri_styles())
-        }
-        "/api/login" => {
-            uri_login_req(body.unwrap(), wfm.clone())
-        }
-        "/login" => {
-            Ok(uri_login())
-        }
-        "/home" => {
-            Ok(uri_home())
-        }
-        "/edit" => {
-            Ok(uri_edit(edit_toggle))
-        }
-        "/logo.svg" => {
-            Ok(uri_logo())
-        }
-        "/wfm_favicon.ico" => {
-            Ok(uri_wfmlogo())
-        }
-        _ => {
-            Ok(uri_not_found())
-        }
+    } else {
+        uri_not_found(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
     }
 }
