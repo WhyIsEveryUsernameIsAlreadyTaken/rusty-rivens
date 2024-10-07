@@ -1,6 +1,5 @@
-use std::{ops::{Deref, DerefMut}, rc::Rc, sync::Arc};
+use std::sync::Arc;
 
-use async_lock::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::{http_client::{client::{HttpClient, Method}, qf_client::QFClient}, AppError};

@@ -67,13 +67,13 @@ pub async fn sync_db(
 
 #[cfg(test)]
 mod tests {
-    use std::{fs::File, sync::Arc};
+    use std::sync::Arc;
 
     use async_lock::Mutex;
     use dotenv::dotenv;
     use serde_json::{from_str, Value};
 
-    use crate::{http_client::qf_client::QFClient, rivens::inventory::{database, raw_inventory::decrypt_last_data, riven_lookop::RivenDataLookup}, STOPPED};
+    use crate::rivens::inventory::{database, raw_inventory::decrypt_last_data, riven_lookop::RivenDataLookup};
 
     use super::sync_db;
 

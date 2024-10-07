@@ -1,10 +1,10 @@
-use std::{io::Cursor, ops::DerefMut, sync::Arc};
+use std::{ops::DerefMut, sync::Arc};
 
 use ascii::AsciiString;
 use async_lock::Mutex;
 use maud::html;
 use serde::Deserialize;
-use tiny_http::{Request, Response};
+use tiny_http::Request;
 
 use crate::{http_client::wfm_client::WFMClient, AppError};
 
@@ -57,6 +57,6 @@ pub fn uri_api_login(
     }
 }
 
-pub fn uri_api_delete_riven(rq: Request, id: &str) -> Result<(), AppError> {
+pub fn uri_api_delete_riven(rq: Request, _id: &str) -> Result<(), AppError> {
     rq.respond(tiny_http::Response::empty(200)).map_err(|e| AppError::new(e.to_string(), "uri_api_delete_riven".to_string()))
 }

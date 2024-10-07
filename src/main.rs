@@ -1,6 +1,5 @@
-use std::{error::Error, fmt::{self, Display}, ops::Deref, rc::Rc, sync::Arc, thread};
+use std::{error::Error, fmt::{self, Display}, sync::Arc, thread};
 
-use dotenv::dotenv;
 
 use once_cell::sync::OnceCell;
 use serde::Deserialize;
@@ -56,7 +55,7 @@ impl AppError {
 impl Error for AppError {}
 
 fn main() -> wry::Result<()> {
-    let server = thread::spawn(|| start_server().unwrap());
+    thread::spawn(|| start_server().unwrap());
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
 

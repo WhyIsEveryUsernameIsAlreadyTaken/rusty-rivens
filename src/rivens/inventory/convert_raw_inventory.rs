@@ -1,7 +1,6 @@
 use std::{cmp::Ordering, error::Error, fmt::Display, ops::Deref, rc::Rc, sync::Arc};
 
 use super::riven_lookop::RivenDataLookup;
-use async_lock::Mutex;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -397,7 +396,6 @@ impl<'a> Display for RivenLookupError<'a> {
                         RivenLookupField::RivenAttributes => "RivenAttributes",
                         RivenLookupField::UniqueName => "UniqueName",
                         RivenLookupField::ModifierTag => "ModifierTag",
-                        RivenLookupField::Upgrades => "Upgrades",
                         RivenLookupField::WfmUrl => "WfmUrl",
                         RivenLookupField::ShortString => "ShortString",
                         RivenLookupField::PrefixTag => "PrefixTag",
@@ -419,7 +417,6 @@ enum RivenLookupField {
     RivenAttributes,
     UniqueName,
     ModifierTag,
-    Upgrades,
     WfmUrl,
     ShortString,
     PrefixTag,
@@ -594,13 +591,12 @@ fn lookup_riven_data<'a>(
 
 #[cfg(test)]
 mod tests {
-    use std::{fs::File, io::Write, ops::DerefMut, sync::Arc};
+    use std::{fs::File, io::Write};
 
-    use async_lock::Mutex;
     use dotenv::dotenv;
-    use serde_json::{from_value, to_value};
+    use serde_json::to_value;
 
-    use crate::{http_client::{client::{HttpClient, Method}, qf_client::QFClient}, rivens::inventory::{database::Auction, raw_inventory::decrypt_last_data, riven_lookop::RivenDataLookup}};
+    use crate::rivens::inventory::{raw_inventory::decrypt_last_data, riven_lookop::RivenDataLookup};
 
     use super::convert_inventory_data;
 

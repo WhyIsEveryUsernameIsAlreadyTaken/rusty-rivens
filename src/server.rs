@@ -1,8 +1,8 @@
 use ascii::AsciiString;
 use async_lock::Mutex;
 use once_cell::sync::OnceCell;
-use std::{fs, io::{self, Cursor}, sync::Arc, time::SystemTime};
-use tiny_http::{Header, Request, Response};
+use std::{fs, io::{self}, sync::Arc, time::SystemTime};
+use tiny_http::Request;
 
 use crate::{
     api_operations::{uri_api_delete_riven, uri_api_login}, http_client::{

@@ -193,7 +193,7 @@ mod tests {
     #[test]
     fn test_wfmclient() {
         let client = WFMClient::new(AuthState::setup().unwrap());
-        let req = smolscale::block_on( async move {
+        let _req = smolscale::block_on( async move {
             let mut limiter = client.limiter.lock().await;
             client.send_request(
                 Method::GET,

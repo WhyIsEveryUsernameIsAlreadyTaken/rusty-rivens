@@ -1,8 +1,8 @@
-use std::io::{self, Cursor};
+use std::io::{self};
 
 use ascii::AsciiString;
 use maud::html;
-use tiny_http::{Request, Response};
+use tiny_http::Request;
 
 
 pub fn uri_login(rq: Request) -> io::Result<()> {

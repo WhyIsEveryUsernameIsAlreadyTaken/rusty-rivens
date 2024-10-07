@@ -2,10 +2,10 @@ use ascii::AsciiString;
 use async_lock::Mutex;
 use maud::{html, PreEscaped, DOCTYPE};
 use serde_json::from_str;
-use std::{io::{self, Cursor}, ops::{Deref, DerefMut}, sync::Arc};
-use tiny_http::{Request, Response, StatusCode};
+use std::{io::{self}, ops::Deref, sync::Arc};
+use tiny_http::{Request, StatusCode};
 
-use crate::{http_client::{auth_state::AuthState, wfm_client::WFMClient}, rivens::inventory::convert_raw_inventory::Item, AppError};
+use crate::{http_client::wfm_client::WFMClient, rivens::inventory::convert_raw_inventory::Item, AppError};
 
 
 pub fn uri_main(rq: Request, wfm: Arc<Mutex<WFMClient>>, logged_in: &mut Option<bool>) -> Result<(), AppError> {

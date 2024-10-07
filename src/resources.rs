@@ -1,6 +1,6 @@
-use std::io::{self, Cursor};
+use std::io::{self};
 use ascii::AsciiString;
-use tiny_http::{Request, Response};
+use tiny_http::Request;
 
 use crate::file_consts::{HTMX, LOGO, WFMLOGO, STYLES};
 
