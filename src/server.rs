@@ -166,6 +166,9 @@ fn handle_request(
         "wfm_favicon.ico" => {
             uri_wfmlogo(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
         }
+        "rivens" => {
+            uri_rivens(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
+        }
         _ => {
             uri_not_found(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
         }
