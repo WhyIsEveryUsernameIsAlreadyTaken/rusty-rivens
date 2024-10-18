@@ -1,51 +1,133 @@
 use std::{
-    ops::DerefMut, sync::Arc, thread::JoinHandle, time::Duration
+    ops::{Deref, DerefMut},
+    sync::Arc,
+    thread::JoinHandle,
+    time::Duration,
 };
 
-use async_lock::Mutex;
 use once_cell::sync::OnceCell;
+use tokio::sync::{
+    mpsc::{channel, Receiver},
+    Mutex,
+};
 
-use crate::{jwt::jwt_is_valid, rate_limiter::RateLimiter, AppError};
+use crate::{
+    http_client::client::{ClientHandle, Header, Request, Response},
+    jwt::jwt_is_valid,
+    rate_limiter::RateLimiter,
+    AppError,
+};
 
 use super::{
     auth_state::AuthState,
-    client::{HttpClient, Method, StatusCode},
+    client::{HttpClient, Method, RequestBuilder, StatusCode},
 };
 
 #[derive(Debug)]
 pub struct WFMClient {
     endpoint: String,
-    limiter: Arc<Mutex<Option<RateLimiter>>>,
+    limiter: Option<Arc<Mutex<RateLimiter>>>,
     auth: AuthState,
-    http_client: Option<JoinHandle<()>>
+    client_handle: Option<Arc<Mutex<ClientHandle>>>,
+    response_receiver: Option<Arc<Mutex<Receiver<Response>>>>,
 }
 
-impl<'a> HttpClient<'a> for WFMClient {}
+impl<'a> HttpClient<'a> for WFMClient {
+    async fn send_fn(
+        &mut self,
+        mut req: super::client::RequestBuilder,
+    ) -> Result<
+        (
+            Arc<Mutex<ClientHandle>>,
+            Arc<Mutex<Receiver<Response>>>,
+            RequestBuilder,
+        ),
+        AppError,
+    > {
+        if let Some(rate_limiter) = self.limiter.clone() {
+            let mut rate_limiter = rate_limiter.lock().await;
+            let rate_limiter = rate_limiter.deref_mut();
+            rate_limiter.wait_for_token().await;
+        };
+        let header = match Header::try_from_str(
+            format!("Authorization: JWT {}", self.auth.access_token.deref()).as_str(),
+        ) {
+            Ok(v) => v,
+            Err(e) => {
+                println!("{}", e.to_string());
+                return Err(AppError::new(
+                    e.to_string(),
+                    "WFMClient::send_fn".to_string(),
+                ));
+            }
+        };
+        req = match req.header(header) {
+            Ok(v) => v,
+            Err(e) => {
+                println!("Error while inseerting Authorization Header: {e}");
+                return Err(AppError::new(
+                    e.to_string(),
+                    "WFMClient::send_fn".to_string(),
+                ));
+            }
+        };
+        let (client_handle, response_receiver) =
+            if let Some(client_handle) = self.client_handle.clone() {
+                (
+                    client_handle,
+                    self.response_receiver
+                        .clone()
+                        .expect("reciever should be availabe after creating the client handle"),
+                )
+            } else {
+                let (request_sender, request_receiver) = channel::<Request>(1);
+                let (response_sender, response_receiver) = channel::<Response>(1);
+                let response_receiver_arc = Arc::new(Mutex::new(response_receiver));
+                self.response_receiver = Some(response_receiver_arc.clone());
+                let client_handle = ClientHandle::create(
+                    self.endpoint.as_str(),
+                    request_sender,
+                    request_receiver,
+                    response_sender,
+                )
+                .map_err(|e| e.prop("WFMClient::send_fn".into()))?;
+                let client_handle = Arc::new(Mutex::new(client_handle));
+                (client_handle, response_receiver_arc)
+            };
+        Ok((client_handle, response_receiver, req))
+    }
+
+    async fn rate_limit(&self) {
+        if let Some(rate_limiter) = self.limiter.clone() {
+            let mut limiter = rate_limiter.lock().await;
+            let limiter = limiter.deref_mut();
+            limiter.add_delay(1.0);
+        }
+    }
+}
 
 impl WFMClient {
     pub fn new(auth: AuthState) -> Self {
         WFMClient {
             endpoint: String::from("https://api.warframe.market/v1"),
-            limiter: Arc::new(Mutex::new(Some(RateLimiter::new(1.0, Duration::new(1, 0))))),
+            limiter: Some(Arc::new(Mutex::new(RateLimiter::new(
+                1.0,
+                Duration::new(1, 0),
+            )))),
             auth,
-            http_client: None,
+            client_handle: None,
+            response_receiver: None,
         }
     }
 
     pub async fn login(&mut self, email: &str, password: &str) -> Result<StatusCode, AppError> {
         let body = serde_json::json!({"email": email, "password": password});
-        let mut rate_limiter = self.limiter.lock().await;
-        let rate_limiter = rate_limiter.deref_mut();
-        let response = match self
-            .send_request(
-                Method::POST,
-                &format!("{}{}", self.endpoint, "/auth/signin"),
-                rate_limiter,
-                None,
-                Some(body),
-            )
-            .await
-        {
+        let req = RequestBuilder::new()
+            .method(Method::POST)
+            .uri(format!("{}{}", self.endpoint, "/auth/signin").as_str())
+            .body(body)
+            .build();
+        let response = match self.send_request(req).await {
             Ok(v) => v,
             Err(e) => return Err(AppError::new(e.to_string(), String::from("login: "))),
         };
@@ -77,7 +159,7 @@ impl WFMClient {
         Ok(response.status)
     }
 
-    pub async fn validate(&self) -> Result<bool, AppError> {
+    pub async fn validate(&mut self) -> Result<bool, AppError> {
         let valid_jwt = if !self.auth.access_token.is_empty() {
             jwt_is_valid(&self.auth.access_token).map_err(|e| e.prop("validate".into()))?
         } else {
@@ -87,16 +169,11 @@ impl WFMClient {
         if !valid_jwt {
             return Ok(false);
         }
-        let mut rate_limiter = self.limiter.lock().await;
-        let rate_limiter = rate_limiter.deref_mut();
-        let res = self
-            .send_request(
-                Method::GET,
-                format!("{}/profile", self.endpoint).as_str(),
-                rate_limiter,
-                Some(self.auth.clone()),
-                None
-            ).await;
+        let req = RequestBuilder::new()
+            .method(Method::GET)
+            .uri(format!("{}/profile", self.endpoint).as_str())
+            .build();
+        let res = self.send_request(req).await;
         let (body, _) = match res {
             Ok(v) => v.res,
             Err(e) => return Err(e.prop("validate".into())),
@@ -184,25 +261,25 @@ pub static TEST_WFM_STOPPED: OnceCell<bool> = once_cell::sync::OnceCell::new();
 
 #[cfg(test)]
 mod tests {
-    use std::ops::DerefMut;
 
-    use crate::http_client::{auth_state::AuthState, client::{HttpClient, Method}, wfm_client::WFMClient};
+    use crate::http_client::{
+        auth_state::AuthState,
+        client::{HttpClient, Method, RequestBuilder},
+        wfm_client::WFMClient,
+    };
 
     use super::TEST_WFM_STOPPED;
 
-    #[test]
-    fn test_wfmclient() {
-        let client = WFMClient::new(AuthState::setup().unwrap());
-        let _req = smolscale::block_on( async move {
-            let mut limiter = client.limiter.lock().await;
-            client.send_request(
-                Method::GET,
-                format!("{}/profile/toopsi", client.endpoint).as_str(),
-                limiter.deref_mut(),
-                None,
-                None
-            ).await
-        });
+    #[tokio::test]
+    async fn test_wfmclient() {
+        let mut client = WFMClient::new(AuthState::setup().unwrap());
+        let _resp = {
+            let req = RequestBuilder::new()
+                .method(Method::GET)
+                .uri(format!("{}/profile/toopsi", client.endpoint).as_str())
+                .build();
+            client.send_request(req).await
+        };
         TEST_WFM_STOPPED.set(true).unwrap();
     }
 }

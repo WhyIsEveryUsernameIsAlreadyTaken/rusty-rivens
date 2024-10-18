@@ -1,4 +1,4 @@
-use std::{error::Error, fmt::{self, Display}, sync::Arc, thread};
+use std::{error::Error, fmt::{self, Display}, sync::Arc};
 
 
 use once_cell::sync::OnceCell;
@@ -55,8 +55,10 @@ impl AppError {
 
 impl Error for AppError {}
 
-fn main() -> wry::Result<()> {
-    thread::spawn(|| start_server().unwrap());
+#[tokio::main]
+async fn main() -> wry::Result<()> {
+    pretty_env_logger::init();
+    let server = tokio::task::spawn(start_server());
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
 

@@ -220,7 +220,7 @@ mod tests {
 
     async fn test_insert_data() {
         dotenv().unwrap();
-        let lookup = RivenDataLookup::setup().unwrap();
+        let lookup = RivenDataLookup::setup().await.unwrap();
         let raw_upgrades = decrypt_last_data(None).unwrap();
         let items = convert_inventory_data(&lookup, raw_upgrades).await;
         let mut auctions = Vec::with_capacity(items.len());

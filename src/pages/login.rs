@@ -1,11 +1,9 @@
-use std::io::{self};
-
-use ascii::AsciiString;
+use http_body_util::Full;
+use hyper::{body::Bytes, header::CONTENT_TYPE, Response, StatusCode};
 use maud::html;
-use tiny_http::Request;
 
 
-pub fn uri_login(rq: Request) -> io::Result<()> {
+pub fn uri_login() -> Response<Full<Bytes>> {
     let pagecontent = html! {
         div id="login_screen" hx-trigger="LoginSuccess from:body" hx-swap="outerHTML" hx-get="/home" {
             div class="row" {
@@ -35,8 +33,17 @@ pub fn uri_login(rq: Request) -> io::Result<()> {
             }
         }
     };
-    rq.respond(tiny_http::Response::from_string(pagecontent.into_string()).with_header(tiny_http::Header {
-        field: "Content-Type".parse().unwrap(),
-        value: AsciiString::from_ascii("text/html; charset=utf8").unwrap(),
-    }))
+    let cc = "text/html; charset=utf8".parse::<hyper::header::HeaderValue>().unwrap();
+
+    match Response::builder()
+        .header(CONTENT_TYPE, cc)
+        .body(Full::new(Bytes::from(pagecontent.into_string())))
+    {
+        Ok(v) => v,
+        Err(_) => {
+            let mut res = Response::new(Full::new(Bytes::new()));
+            *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+            res
+        },
+    }
 }

@@ -1,32 +1,38 @@
 use ascii::AsciiString;
-use async_lock::Mutex;
+use http_body_util::Full;
+use hyper::{body::Bytes, header::{HeaderValue, CONTENT_TYPE}, Request, Response, StatusCode};
+use tokio::{runtime::Handle, sync::Mutex};
 use maud::{html, PreEscaped, DOCTYPE};
 use serde_json::from_str;
-use std::{io::{self}, ops::Deref, sync::Arc};
-use tiny_http::{Request, StatusCode};
+use std::{io, ops::{Deref, DerefMut}, str::FromStr, sync::Arc, u8};
 
 use crate::{http_client::wfm_client::WFMClient, rivens::inventory::convert_raw_inventory::Item, AppError};
 
 
-pub fn uri_main(rq: Request, wfm: Arc<Mutex<WFMClient>>, logged_in: &mut Option<bool>) -> Result<(), AppError> {
+pub fn uri_main(wfm: Arc<Mutex<WFMClient>>, logged_in: Arc<Mutex<Option<bool>>>) -> Result<Response<Full<Bytes>>, AppError> {
+    let mut logged_in = logged_in.blocking_lock();
+    let logged_in = logged_in.deref_mut();
     let pagecontent = if logged_in.is_some() {
         html! {
             (DOCTYPE)
             head {
                 (PreEscaped("<script src=\"/htmx.min.js\"></script>"))
                 (PreEscaped("<link rel=\"stylesheet\" href=\"/styles.css\" />"))
-                (PreEscaped("<script src=\"/htmx.min.js\"></script>"))
                 body {
                     div hx-get="/home" hx-swap="outerHTML" hx-trigger="load";
                 };
             }
         }
     } else {
-        let valid = smolscale::block_on(async move {
-            let wfm = wfm.lock().await;
-            let wfm = wfm.deref();
-            wfm.validate().await
-        }).map_err(|e| e.prop("uri_main".into()))?;
+        let valid = {
+            let mut wfm = wfm.blocking_lock();
+            let wfm = wfm.deref_mut();
+            tokio::task::block_in_place(move || {
+                Handle::current().block_on(async move {
+                    wfm.validate().await
+                })
+            })
+        }.map_err(|e| e.prop("uri_main".into()))?;
         if valid {
             *logged_in = Some(true);
             html! {
@@ -54,11 +60,17 @@ pub fn uri_main(rq: Request, wfm: Arc<Mutex<WFMClient>>, logged_in: &mut Option<
             }
         }
     };
-
-    rq.respond(tiny_http::Response::from_string(pagecontent.into_string()).with_header(tiny_http::Header {
-        field: "Content-Type".parse().unwrap(),
-        value: AsciiString::from_ascii("text/html; charset=utf8").unwrap(),
-    })).map_err(|e| AppError::new(e.to_string(), "uri_main".to_string()))
+    let charset = "text/html; charset=utf8".parse::<HeaderValue>().unwrap();
+    Ok(match Response::builder()
+        .header(CONTENT_TYPE, charset)
+        .body(Full::new(Bytes::from(pagecontent.into_string()))) {
+        Ok(v) => v,
+        Err(_) => {
+            let mut res = Response::new(Full::new(Bytes::new()));
+            *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+            res
+        },
+    })
 }
 
 pub fn rivens() -> PreEscaped<String> {
@@ -112,15 +124,24 @@ pub fn rivens() -> PreEscaped<String> {
     }
 }
 
-pub fn uri_home(rq: Request) -> io::Result<()> {
+pub fn uri_home() -> Response<Full<Bytes>> {
     let pagecontent = rivens();
-    rq.respond(tiny_http::Response::from_string(pagecontent.into_string()).with_header(tiny_http::Header {
-        field: "Content-Type".parse().unwrap(),
-        value: AsciiString::from_ascii("text/html; charset=utf8").unwrap(),
-    }))
+    let cc = "text/html; charset=utf8".parse::<HeaderValue>().unwrap();
+    match Response::builder()
+        .header(CONTENT_TYPE, cc)
+        .body(Full::new(Bytes::from(pagecontent.into_string()))) {
+        Ok(v) => v,
+        Err(_) => {
+            let mut res = Response::new(Full::new(Bytes::new()));
+            *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+            res
+        },
+    }
 }
 
-pub fn uri_edit(rq: Request, edit_toggle: &mut bool) -> io::Result<()> {
+pub fn uri_edit(edit_toggle: Arc<Mutex<bool>>) -> Response<Full<Bytes>> {
+    let mut edit_toggle = edit_toggle.blocking_lock();
+    let edit_toggle = edit_toggle.deref_mut();
     let pagecontent = if !*edit_toggle {
         *edit_toggle = true;
         html! {
@@ -147,13 +168,21 @@ pub fn uri_edit(rq: Request, edit_toggle: &mut bool) -> io::Result<()> {
             div id="edit_screen" style="display: none;";
         }
     };
-    rq.respond(tiny_http::Response::from_string(pagecontent.into_string()).with_header(tiny_http::Header {
-        field: "Content-Type".parse().unwrap(),
-        value: AsciiString::from_ascii("text/html; charset=utf8").unwrap(),
-    }))
+    let cc = "text/html; charset=utf8".parse::<HeaderValue>().unwrap();
+    match Response::builder()
+        .header(CONTENT_TYPE, cc)
+        .body(Full::new(Bytes::from(pagecontent.into_string())))
+    {
+        Ok(v) => v,
+        Err(_) => {
+            let mut res = Response::new(Full::new(Bytes::new()));
+            *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+            res
+        },
+    }
 }
 
-pub fn uri_unauthorized(rq: Request) -> io::Result<()> {
+pub async fn uri_unauthorized() -> Response<Full<Bytes>> {
     let pagecontent = html! {
         (DOCTYPE)
         body {
@@ -163,15 +192,22 @@ pub fn uri_unauthorized(rq: Request) -> io::Result<()> {
         }
     };
 
-    rq.respond(tiny_http::Response::from_string(pagecontent.into_string())
-        .with_header(tiny_http::Header {
-            field: "Content-Type".parse().unwrap(),
-            value: AsciiString::from_ascii("text/html; charset=utf8").unwrap(),
-        })
-        .with_status_code(StatusCode(403)))
+    let cc = "text/html; charset=utf8".parse::<HeaderValue>().unwrap();
+    match Response::builder()
+        .header(CONTENT_TYPE, cc)
+        .status(401)
+        .body(Full::new(Bytes::from(pagecontent.into_string())))
+    {
+        Ok(v) => v,
+        Err(_) => {
+            let mut res = Response::new(Full::new(Bytes::new()));
+            *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+            res
+        },
+    }
 }
 
-pub fn uri_not_found(rq: Request) -> io::Result<()> {
+pub fn uri_not_found() -> Response<Full<Bytes>> {
     let pagecontent = html! {
         (DOCTYPE)
         body {
@@ -181,10 +217,17 @@ pub fn uri_not_found(rq: Request) -> io::Result<()> {
         }
     };
 
-    rq.respond(tiny_http::Response::from_string(pagecontent.into_string())
-        .with_header(tiny_http::Header {
-            field: "Content-Type".parse().unwrap(),
-            value: AsciiString::from_ascii("text/html; charset=utf8").unwrap(),
-        })
-        .with_status_code(StatusCode(404)))
+    let cc = "text/html; charset=utf8".parse::<HeaderValue>().unwrap();
+    match Response::builder()
+        .header(CONTENT_TYPE, cc)
+        .status(404)
+        .body(Full::new(Bytes::from(pagecontent.into_string())))
+    {
+        Ok(v) => v,
+        Err(_) => {
+            let mut res = Response::new(Full::new(Bytes::new()));
+            *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+            res
+        },
+    }
 }

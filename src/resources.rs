@@ -1,90 +1,105 @@
-use std::io::{self};
-use ascii::AsciiString;
-use tiny_http::Request;
+use http_body_util::Full;
+use hyper::{body::Bytes, header::{CACHE_CONTROL, CONTENT_TYPE, ETAG}, Response, StatusCode};
+use wry::http::Error;
 
-use crate::file_consts::{HTMX, LOGO, WFMLOGO, STYLES};
+use crate::file_consts::{HTMX, LOGO, STYLES, WFMLOGO};
 
-pub fn uri_styles(rq: Request) -> io::Result<()> {
+pub fn uri_styles() -> Result<Response<Full<Bytes>>, Error> {
     let hash = md5::compute(STYLES);
 
-    rq.respond(tiny_http::Response::from_string(STYLES)
-        .with_header(tiny_http::Header {
-            field: "Content-Type".parse().unwrap(),
-            value: AsciiString::from_ascii("text/css; charset=utf8")
-                .unwrap(),
-        })
-        // .with_header(tiny_http::Header {
-        //     field: "Cache-Control".parse().unwrap(),
-        //     value: AsciiString::from_ascii("public, max-age=31536000, immutable")
-        //         .unwrap(),
-        // })
-        .with_header(tiny_http::Header {
-            field: "ETag".parse().unwrap(),
-            value: AsciiString::from_ascii(format!("{:x}", hash))
-                .unwrap(),
-        }))
+    let ct = "text/css; charset=utf8".parse::<hyper::header::HeaderValue>()
+        .unwrap();
+    let cc = "public, max-age=31536000, immutable".parse::<hyper::header::HeaderValue>()
+        .unwrap();
+    let et = format!("{:x}", hash).parse::<hyper::header::HeaderValue>()
+        .unwrap();
+    let res = Response::builder()
+        .header(CONTENT_TYPE, ct)
+        .header(CACHE_CONTROL, cc)
+        .header(ETAG, et)
+        .body(Full::new(Bytes::from(WFMLOGO)));
+
+    Ok(match res {
+        Ok(v) => v,
+        Err(_) => {
+            let mut res = Response::new(Full::new(Bytes::new()));
+            *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+            res
+        },
+    })
 }
 
-pub fn uri_htmx(rq: Request) -> io::Result<()> {
+pub fn uri_htmx() -> Result<Response<Full<Bytes>>, Error> {
     let hash = md5::compute(HTMX);
 
-    rq.respond(tiny_http::Response::from_string(HTMX)
-        .with_header(tiny_http::Header {
-            field: "Content-Type".parse().unwrap(),
-            value: AsciiString::from_ascii("text/javascript; charset=utf8")
-                .unwrap(),
-        })
-        .with_header(tiny_http::Header {
-            field: "Cache-Control".parse().unwrap(),
-            value: AsciiString::from_ascii("public, max-age=31536000, immutable")
-                .unwrap(),
-        })
-        .with_header(tiny_http::Header {
-            field: "ETag".parse().unwrap(),
-            value: AsciiString::from_ascii(format!("{:x}", hash))
+    let ct = "text/javascript; charset=utf8".parse::<hyper::header::HeaderValue>()
+        .unwrap();
+    let cc = "public, max-age=31536000, immutable".parse::<hyper::header::HeaderValue>()
+        .unwrap();
+    let et = format!("{:x}", hash).parse::<hyper::header::HeaderValue>()
+        .unwrap();
+    let res = Response::builder()
+        .header(CONTENT_TYPE, ct)
+        .header(CACHE_CONTROL, cc)
+        .header(ETAG, et)
+        .body(Full::new(Bytes::from(WFMLOGO)));
 
-                .unwrap(),
-        }))
+    Ok(match res {
+        Ok(v) => v,
+        Err(_) => {
+            let mut res = Response::new(Full::new(Bytes::new()));
+            *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+            res
+        },
+    })
 }
 
-pub fn uri_logo(rq: Request) -> io::Result<()> {
+pub fn uri_logo() -> Result<Response<Full<Bytes>>, Error> {
     let hash = md5::compute(LOGO);
 
-    rq.respond(tiny_http::Response::from_data(LOGO)
-        .with_header(tiny_http::Header {
-            field: "Content-Type".parse().unwrap(),
-            value: AsciiString::from_ascii("image/svg+xml")
-                .unwrap(),
-        })
-        .with_header(tiny_http::Header {
-            field: "Cache-Control".parse().unwrap(),
-            value: AsciiString::from_ascii("public, max-age=31536000, immutable")
-                .unwrap(),
-        })
-        .with_header(tiny_http::Header {
-            field: "ETag".parse().unwrap(),
-            value: AsciiString::from_ascii(format!("{:x}", hash))
-                .unwrap(),
-        }))
+    let ct = "image/svg+xml; charset=utf8".parse::<hyper::header::HeaderValue>()
+        .unwrap();
+    let cc = "public, max-age=31536000, immutable".parse::<hyper::header::HeaderValue>()
+        .unwrap();
+    let et = format!("{:x}", hash).parse::<hyper::header::HeaderValue>()
+        .unwrap();
+    let res = Response::builder()
+        .header(CONTENT_TYPE, ct)
+        .header(CACHE_CONTROL, cc)
+        .header(ETAG, et)
+        .body(Full::new(Bytes::from(WFMLOGO)));
+
+    Ok(match res {
+        Ok(v) => v,
+        Err(_) => {
+            let mut res = Response::new(Full::new(Bytes::new()));
+            *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+            res
+        },
+    })
 }
 
-pub fn uri_wfmlogo(rq: Request) -> io::Result<()> {
+pub fn uri_wfmlogo() -> Result<Response<Full<Bytes>>, Error> {
     let hash = md5::compute(WFMLOGO);
 
-    rq.respond(tiny_http::Response::from_data(WFMLOGO)
-        .with_header(tiny_http::Header {
-            field: "Content-Type".parse().unwrap(),
-            value: AsciiString::from_ascii("image/ico")
-                .unwrap(),
-        })
-        .with_header(tiny_http::Header {
-            field: "Cache-Control".parse().unwrap(),
-            value: AsciiString::from_ascii("public, max-age=31536000, immutable")
-                .unwrap(),
-        })
-        .with_header(tiny_http::Header {
-            field: "ETag".parse().unwrap(),
-            value: AsciiString::from_ascii(format!("{:x}", hash))
-                .unwrap(),
-        }))
+    let ct = "image/vnd.microsoft.icon".parse::<hyper::header::HeaderValue>()
+        .unwrap();
+    let cc = "public, max-age=31536000, immutable".parse::<hyper::header::HeaderValue>()
+        .unwrap();
+    let et = format!("{:x}", hash).parse::<hyper::header::HeaderValue>()
+        .unwrap();
+    let res = Response::builder()
+        .header(CONTENT_TYPE, ct)
+        .header(CACHE_CONTROL, cc)
+        .header(ETAG, et)
+        .body(Full::new(Bytes::from(WFMLOGO)));
+
+    Ok(match res {
+        Ok(v) => v,
+        Err(_) => {
+            let mut res = Response::new(Full::new(Bytes::new()));
+            *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+            res
+        },
+    })
 }

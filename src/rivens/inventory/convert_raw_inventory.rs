@@ -600,12 +600,12 @@ mod tests {
 
     use super::convert_inventory_data;
 
-    #[test]
-    fn test_convert_inventory_data() {
+    #[tokio::test]
+    async fn test_convert_inventory_data() {
         dotenv().unwrap();
-        let lookup = RivenDataLookup::setup().unwrap();
+        let lookup = RivenDataLookup::setup().await.unwrap();
         let raw_upgrades = decrypt_last_data(None).unwrap();
-        let items = smolscale::block_on(async move {convert_inventory_data(&lookup, raw_upgrades).await});
+        let items = {convert_inventory_data(&lookup, raw_upgrades).await};
         let out = to_value(items).unwrap();
         let mut file = File::create("rivenData.json").unwrap();
         file.write_all(out.to_string().as_bytes()).unwrap();

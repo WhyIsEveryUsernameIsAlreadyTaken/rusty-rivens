@@ -1,15 +1,19 @@
-use ascii::AsciiString;
-use async_lock::Mutex;
-use once_cell::sync::OnceCell;
-use std::{fs, io::{self}, sync::Arc, time::SystemTime};
-use tiny_http::Request;
+use hyper::body::{Bytes, Incoming};
+use tokio::{net::TcpListener, runtime::Handle, sync::Mutex};
+use std::{fs, future::Future, io, net::SocketAddr, pin::Pin, sync::Arc, time::SystemTime};
+use http_body_util::{BodyExt, Full};
+use hyper::server::conn::http2;
+use hyper::service::Service;
+use hyper::{Request, Response};
+
+use hyper_util::rt::{TokioExecutor, TokioIo};
 
 use crate::{
     api_operations::{uri_api_delete_riven, uri_api_login}, http_client::{
         auth_state::AuthState, wfm_client::WFMClient
     }, pages::{
         home::{
-            uri_edit, uri_home, uri_main, uri_not_found, uri_unauthorized
+            uri_edit, uri_home, uri_main, uri_not_found
         },
         login::uri_login
     }, resources::{
@@ -17,13 +21,78 @@ use crate::{
         uri_logo,
         uri_styles,
         uri_wfmlogo
-    }, rivens::inventory::database::InventoryDB, AppError, STOPPED
+    }, rivens::inventory::database::InventoryDB, websocket_proxy::uri_rivens, AppError
 };
 
-#[derive(Debug)]
-struct User(Option<AsciiString>);
+#[derive(Debug, Clone)]
+struct ServerState {
+    wfm: Arc<Mutex<WFMClient>>,
+    edit_toggle: Arc<Mutex<bool>>,
+    logged_in: Arc<Mutex<Option<bool>>>,
+}
 
-static USER: OnceCell<User> = OnceCell::new();
+impl Service<Request<Incoming>> for ServerState {
+    type Response = Response<Full<Bytes>>;
+    type Error = hyper::Error;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    fn call(&self, mut req: Request<Incoming>) -> Self::Future {
+        let data = {
+            tokio::task::block_in_place(|| {
+                Handle::current().block_on(async {
+                    req.body_mut().collect().await.map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
+                })
+            })
+        }.unwrap();
+        let data = data.to_bytes();
+
+        let uri = req.uri().path();
+        let (root, other) = uri[1..].split_once('/').unwrap_or((&uri[1..], ""));
+
+        let body = String::from_utf8(data.into()).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string())).unwrap();
+        let body = if body.len() != 0 {
+            Some(body.as_str())
+        } else {
+            None
+        };
+        let res = match root {
+            "" | "/" => {
+                uri_main(self.wfm.clone(), self.logged_in.clone()).unwrap()
+            }
+            "htmx.min.js" => {
+                uri_htmx().unwrap()
+            }
+            "styles.css" => {
+                uri_styles().unwrap()
+            }
+            "api" => {
+                match_uri_api(other, body, self.wfm.clone(), self.logged_in.clone()).unwrap()
+            }
+            "login" => {
+                uri_login()
+            }
+            "home" => {
+                uri_home()
+            }
+            "edit" => {
+                uri_edit(self.edit_toggle.clone())
+            }
+            "logo.svg" => {
+                uri_logo().unwrap()
+            }
+            "wfm_favicon.ico" => {
+                uri_wfmlogo().unwrap()
+            }
+            "rivens" => {
+                uri_rivens(req.headers())
+            }
+            _ => {
+                uri_not_found()
+            }
+        };
+        Box::pin(async { Ok(res) })
+    }
+}
 
 struct LastModified(SystemTime, SystemTime);
 
@@ -39,75 +108,42 @@ impl LastModified {
     }
 }
 
-pub(crate) fn start_server() -> Result<(), AppError> {
-    let s = tiny_http::Server::http("127.0.0.1:8000").unwrap();
-    let mut edit_toggle = false;
-    let mut logged_in: Option<bool> = None;
+pub async fn start_server() {
+    let edit_toggle = false;
+    let logged_in: Option<bool> = None;
     println!("SERVER STARTED");
-    if STOPPED.get().is_some() {
-        return Ok(());
-    }
 
-    let auth_state = AuthState::setup().map_err(|e| e.prop("start_server".into()))?;
+    let auth_state = AuthState::setup().unwrap();
     let wfm_client = WFMClient::new(auth_state);
     let wfm_client = Arc::new(Mutex::new(wfm_client));
 
-    let rq = s.recv().unwrap();
-    let head = rq.headers().iter().find(|&v| v.field.equiv("User-Agent"));
-    let head = head.unwrap().value.clone();
-    USER.set(User(Some(head))).unwrap();
-    println!("received request! method: {:?}, url: {:?}",
-        rq.method(),
-        rq.url(),
-    );
-    let uri = rq.url().to_owned();
-    handle_request(
-        rq,
-        uri.as_str(),
-        wfm_client.clone(),
-        None,
-        &mut edit_toggle,
-        &mut logged_in,
-    ).map_err(|e| e.prop("start_server".into()))?;
-
     let mut last_modified = LastModified(SystemTime::UNIX_EPOCH, SystemTime::UNIX_EPOCH);
-    let db = InventoryDB::open("inventory.sqlite3")
-        .map_err(
-            |e| AppError::new(e.to_string(), "start_server: InventoryDB::open".to_string())
-        )?;
+    let db = InventoryDB::open("inventory.sqlite3").unwrap();
 
     let db = Arc::new(Mutex::new(db));
     // let lookup = Arc::new(RivenDataLookup::setup().unwrap());
 
+    let server_state = ServerState {
+        wfm: wfm_client,
+        edit_toggle: Arc::new(Mutex::new(edit_toggle)),
+        logged_in: Arc::new(Mutex::new(logged_in)),
+    };
+    let addr: SocketAddr = ([127, 0, 0, 1], 3000).into();
+
+    let listener = TcpListener::bind(addr).await.unwrap();
+    println!("Listening on http://{}", addr);
+
     loop {
-        if let Some(mut rq) = s.try_recv().unwrap() {
-            println!("received request! method: {:?}, url: {:?}",
-                rq.method(),
-                rq.url(),
-            );
-            if let User(Some(u)) = USER.get().unwrap() {
-                if &rq.headers().iter().find(|&v| v.field.equiv("User-Agent")).unwrap().value != u {
-                    uri_unauthorized(rq).unwrap();
-                    continue;
-                }
+        let (stream, _) = listener.accept().await.unwrap();
+        println!("connection accepted");
+        let io = TokioIo::new(stream);
+        let server_state = server_state.clone();
+        tokio::task::spawn(async move {
+            if let Err(err) = http2::Builder::new(TokioExecutor::new()).serve_connection(io, server_state).await { // ????????????????????????????????????
+                println!("Failed to serve connection: {:?}", err);
             }
-            let mut body = String::new();
-            rq.as_reader().read_to_string(&mut body).unwrap();
-            let uri = rq.url().to_owned();
-            handle_request(
-                rq,
-                uri.as_str(),
-                wfm_client.clone(),
-                Some(body.as_str()),
-                &mut edit_toggle,
-                &mut logged_in,
-            ).map_err(|e| e.prop("start_server: spawn".into()))?;
-        } else {
-            if STOPPED.get() == Some(&true) {
-                break;
-            }
-            continue;
-        };
+        });
+    }
 
         // if last_modified.detect_file_change()
         //     .map_err(|e|
@@ -124,74 +160,25 @@ pub(crate) fn start_server() -> Result<(), AppError> {
         //         }
         //     });
         // }
-    };
-    println!("SERVER CLOSED");
-    Ok(())
-}
-
-fn handle_request(
-    rq: Request,
-    uri: &str,
-    wfm: Arc<Mutex<WFMClient>>,
-    body: Option<&str>,
-    edit_toggle: &mut bool,
-    logged_in: &mut Option<bool>,
-) -> Result<(), AppError> {
-    let (root, other) = uri[1..].split_once('/').unwrap_or((&uri[1..], ""));
-    match root {
-        "" | "/" => {
-            uri_main(rq, wfm, logged_in).map_err(|e| e.prop("handle_request".into()))
-        }
-        "htmx.min.js" => {
-            uri_htmx(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
-        }
-        "styles.css" => {
-            uri_styles(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
-        }
-        "api" => {
-            match_uri_api(rq, other, body, wfm, logged_in).map_err(|e| e.prop("handle_request".into()))
-        }
-        "login" => {
-            uri_login(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
-        }
-        "home" => {
-            uri_home(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
-        }
-        "edit" => {
-            uri_edit(rq, edit_toggle).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
-        }
-        "logo.svg" => {
-            uri_logo(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
-        }
-        "wfm_favicon.ico" => {
-            uri_wfmlogo(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
-        }
-        "rivens" => {
-            uri_rivens(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
-        }
-        _ => {
-            uri_not_found(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
-        }
-    }
+    // println!("SERVER CLOSED");
 }
 
 fn match_uri_api(
-    rq: Request,
     uri: &str,
     body: Option<&str>,
     wfm: Arc<Mutex<WFMClient>>,
-    logged_in: &mut Option<bool>
-) -> Result<(), AppError> {
+    logged_in: Arc<Mutex<Option<bool>>>
+) -> Result<Response<Full<Bytes>>, AppError> {
     let (root, other) = uri.split_once('/').unwrap_or((uri, ""));
     match root {
         "login" => {
-            uri_api_login(rq, body.unwrap(), wfm.clone(), logged_in).map_err(|e| e.prop("match_uri_api".into()))
+            uri_api_login(body.unwrap(), wfm.clone(), logged_in).map_err(|e| e.prop("match_uri_api".into()))
         }
         "delete_riven" => {
-            uri_api_delete_riven(rq, other).map_err(|e| e.prop("match_uri_api".into()))
+            Ok(uri_api_delete_riven(other))
         }
         _ => {
-            uri_not_found(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
+            Ok(uri_not_found())
         }
     }
 }

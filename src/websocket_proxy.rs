@@ -1,56 +1,71 @@
-use std::{io, str::FromStr};
+use std::str::FromStr;
 
 use ascii::AsciiString;
-use tiny_http::{Header, Request, Response};
+use http_body_util::Full;
+use hyper::{body::Bytes, header::{HeaderValue, CONNECTION, SEC_WEBSOCKET_ACCEPT, SEC_WEBSOCKET_KEY, SEC_WEBSOCKET_VERSION, UPGRADE}, HeaderMap, Response, StatusCode};
+use openssl::{base64, sha::sha1};
 
 
-pub fn uri_rivens(rq: Request) -> io::Result<()> {
-    if let Some(connection_header) = rq.headers().iter().find(|&h| h.field.equiv("Connection")) {
-        let upgrade_value = if let Ok(upgrade) =  AsciiString::from_str("upgrade") {
-            upgrade
-        } else {
-            return rq.respond(Response::empty(500));
-        };
-        if !connection_header.value.eq_ignore_ascii_case(&upgrade_value) {
-            return rq.respond(Response::empty(426));
+pub fn uri_rivens(headers: &HeaderMap) -> Response<Full<Bytes>> {
+    if headers.contains_key(CONNECTION) {
+        let connection_header = headers[CONNECTION].clone();
+        if connection_header.as_bytes() != "upgrade".as_bytes() {
+            println!("Bad Upgrade header value: {:?}", connection_header.to_str());
+            let mut res = Response::new(Full::new(Bytes::new()));
+            *res.status_mut() = StatusCode::BAD_REQUEST;
+            return res;
         };
     }
-    let (wsoc_key, wsoc_ver) = if let Some(upgrade_header) = rq.headers().iter().find(|&h| h.field.equiv("Upgrade")) {
-        let protocol = if let Ok(p) =  AsciiString::from_str("websocket") {
-            p
+    let (wsoc_key, _) = if headers.contains_key(UPGRADE) {
+        let upgrade_header = headers[UPGRADE].clone();
+        if upgrade_header.as_bytes() != "websocket".as_bytes() {
+            println!("Bad protocol: {:?}", upgrade_header.to_str());
+            let mut res = Response::new(Full::new(Bytes::new()));
+            *res.status_mut() = StatusCode::BAD_REQUEST;
+            return res;
+        };
+        let wsoc_key = if headers.contains_key(SEC_WEBSOCKET_KEY) {
+            headers[SEC_WEBSOCKET_KEY].clone()
         } else {
-            return rq.respond(Response::empty(500));
+            let mut res = Response::new(Full::new(Bytes::new()));
+            *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+            return res;
         };
-        if !upgrade_header.value.eq_ignore_ascii_case(&protocol) {
-            return rq.respond(Response::empty(426));
-        };
-        let connection_header = if let Ok(h) = Header::from_str("Connecton: upgrade") {
-            h
+        let wsoc_ver = if headers.contains_key(SEC_WEBSOCKET_VERSION) {
+            headers[SEC_WEBSOCKET_VERSION].clone()
         } else {
-            return rq.respond(Response::empty(500));
+            let mut res = Response::new(Full::new(Bytes::new()));
+            *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+            return res;
         };
-        let upgrade_header = if let Ok(h) = Header::from_str("Upgrade: websocket") {
-            h
-        } else {
-            return rq.respond(Response::empty(500));
-        };
-        let wsoc_key = if let Some(wsoc_key_header) = rq.headers().iter().find(|&h| h.field.equiv("Sec-WebSocket-Key")) {
-            wsoc_key_header.value
-        } else {
-            todo!()
-        };
-        let wsoc_key = if let Some(wsoc_key_header) = rq.headers().iter().find(|&h| h.field.equiv("Sec-WebSocket-Key")) {
-            wsoc_key_header.value
-        } else {
-            todo!()
-        };
-        rq.respond(Response::empty(101)
-            .with_header(connection_header)
-            .with_header(upgrade_header)
-        )?;
-        (wsoc_key, wsoc_key)
+        (wsoc_key, wsoc_ver)
     } else {
-        todo!()
+            let mut res = Response::new(Full::new(Bytes::new()));
+            *res.status_mut() = StatusCode::BAD_REQUEST;
+            return res;
+    };
+
+    let connection_header = "Upgrade".parse::<HeaderValue>().unwrap();
+    let upgrade_header = "websocket".parse::<HeaderValue>().unwrap();
+    let key = [wsoc_key.as_bytes(), b"258EAFA5-E914-47DA-95CA-C5AB0DC85B11"].concat();
+    let key = sha1(&key);
+    let key = base64::encode_block(&key);
+
+    let wsoc_accept_header = format!("{key}").parse::<HeaderValue>().unwrap();
+
+    let res = Response::builder()
+        .header(CONNECTION, connection_header)
+        .header(UPGRADE, upgrade_header)
+        .header(SEC_WEBSOCKET_ACCEPT, wsoc_accept_header)
+        .status(101)
+        .body(Full::new(Bytes::new()));
+    match res {
+        Ok(v) => v,
+        Err(_) => {
+            let mut res = Response::new(Full::new(Bytes::new()));
+            *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+            res
+        },
     };
     todo!()
 }

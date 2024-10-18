@@ -1,6 +1,6 @@
 use std::{ops::DerefMut, sync::Arc};
 
-use async_lock::Mutex;
+use tokio::sync::Mutex;
 
 use super::{
     convert_raw_inventory::{convert_inventory_data, Item, Upgrades},
@@ -69,9 +69,9 @@ pub async fn sync_db(
 mod tests {
     use std::sync::Arc;
 
-    use async_lock::Mutex;
     use dotenv::dotenv;
     use serde_json::{from_str, Value};
+    use tokio::sync::Mutex;
 
     use crate::rivens::inventory::{database, raw_inventory::decrypt_last_data, riven_lookop::RivenDataLookup};
 
@@ -83,8 +83,8 @@ mod tests {
         serde_json::from_value(val["items"].clone()).unwrap()
     }
 
-    #[test]
-    fn test_sync_db() {
+    #[tokio::test]
+    async fn test_sync_db() {
         dotenv().unwrap();
         let contrl_items = Some(decrypt_last_data(Some("lastDataControl.dat")).unwrap());
         let added_items = Some(decrypt_last_data(Some("lastDataAdded.dat")).unwrap());
@@ -93,33 +93,27 @@ mod tests {
         let db = database::InventoryDB::open("test_db.sqlite3").unwrap();
         let db = Arc::new(Mutex::new(db));
 
-        let (init, _, same) = smolscale::block_on( {
+        let (init, _, same) = {
             let db = db.clone();
             let lookup = lookup.clone();
-            async move {
-                sync_db(db, &lookup, contrl_items).await.unwrap()
-            }
-        });
+            sync_db(db, &lookup, contrl_items).await.unwrap()
+        };
         assert_eq!(same, 0, "same itms: {same}");
 
-        let (added, removed, same) = smolscale::block_on( {
+        let (added, removed, same) = {
             let db = db.clone();
             let lookup = lookup.clone();
-            async move {
-                sync_db(db, &lookup, added_items).await.unwrap()
-            }
-        });
+            sync_db(db, &lookup, added_items).await.unwrap()
+        };
         assert!(same != 0, "same itms: {same}");
         assert_eq!(added, 1, "{added} added");
         assert_eq!(removed, 0, "{removed}");
 
-        let (added, removed, kept) = smolscale::block_on( {
+        let (added, removed, kept) = {
             let db = db.clone();
             let lookup = lookup.clone();
-            async move {
-                sync_db(db, &lookup, subtracted_items).await.unwrap()
-            }
-        });
+            sync_db(db, &lookup, subtracted_items).await.unwrap()
+        };
 
         println!("kept: {kept}");
         assert_eq!(added, 0, "{added}");

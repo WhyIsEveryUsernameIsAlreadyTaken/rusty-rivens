@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{http_client::{client::{HttpClient, Method}, qf_client::QFClient}, AppError};
+use crate::{http_client::{client::{HttpClient, Method, RequestBuilder}, qf_client::QFClient}, AppError};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RivenDataLookup {
@@ -53,17 +53,15 @@ impl Default for RivenDataLookup {
 }
 
 impl RivenDataLookup {
-    pub fn setup() -> Result<Self, AppError> {
-        let qf = QFClient::new();
-        let res = smolscale::block_on(async move {
-            qf.send_request(
-                Method::GET,
-                qf.endpoint.as_str(),
-                &mut None,
-                None,
-                None
-            ).await
-        });
+    pub async fn setup() -> Result<Self, AppError> {
+        let mut qf = QFClient::new();
+        let res = {
+            let req = RequestBuilder::new()
+                .method(Method::GET)
+                .uri(qf.endpoint.as_str())
+                .build();
+            qf.send_request(req).await
+        };
         let (body_value, _) = match res {
             Ok(v) => v.res,
             Err(e) => return Err(
