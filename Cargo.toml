@@ -9,7 +9,7 @@ ascii = "1.1.0"
 cbc = { version = "0.1.2", features = ["std"] }
 dotenv = { version = "0.15.0", default-features = false }
 http-body-util = { version = "0.1.2", default-features = false }
-hyper = { version = "1.4.1", features = ["http2", "server"] }
+hyper = { version = "1.5.0", features = ["http2", "server"] }
 hyper-util = { version = "0.1.9", features = ["tokio"] }
 jsonwebtoken = { version = "9.3.0", default-features = false }
 maud = "0.26.0"
@@ -25,7 +25,7 @@ serde_json = "1.0.127"
 serde_urlencoded = "0.7.1"
 tao = "0.30.2"
 time = { version = "0.3.36", default-features = false, features = ["macros", "serde", "serde-well-known", "std"] }
-tokio = { version = "1.40.0", default-features = false, features = ["macros", "net", "rt", "rt-multi-thread", "time"] }
+tokio = { version = "1.40.0", default-features = false, features = ["io-util", "macros", "net", "rt", "rt-multi-thread", "time"] }
 tokio-native-tls = { version = "0.3.1", default-features = false, features = ["vendored"] }
 wry = { version = "0.45.0", features = ["devtools", "linux-body"] }
 

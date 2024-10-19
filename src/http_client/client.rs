@@ -6,7 +6,7 @@ use std::{
 use tokio_native_tls::{native_tls, TlsConnector, TlsStream};
 use once_cell::sync::OnceCell;
 use serde_json::Value;
-use tokio::{io::{self, AsyncBufReadExt, AsyncWriteExt, BufReader}, net::TcpStream, sync::{mpsc::{channel, error::{SendError as SError, TryRecvError}, Receiver, Sender}, Mutex}, task, time::timeout};
+use tokio::{io::{self, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader}, net::TcpStream, sync::{mpsc::{channel, error::{SendError as SError, TryRecvError}, Receiver, Sender}, Mutex}, task, time::timeout};
 
 use crate::{AppError, STOPPED};
 
@@ -257,8 +257,10 @@ async fn collect_payload_chunk(
     size: usize,
     reader: &mut BufReader<&mut TlsStream<TcpStream>>,
 ) -> Result<(), SendError> {
-    let buf = reader.buffer();
-    let buf = String::from_utf8(buf[..size].to_vec()).unwrap();
+    let mut buf: Vec<u8> = Vec::with_capacity(size);
+    assert!(buf.capacity() >= size, "pp too small: {} vs {size}", buf.capacity());
+    reader.read_exact(&mut buf).await.expect("grrrrrr");
+    let buf = String::from_utf8(buf).unwrap();
     let buf = buf.as_str();
     out.push_str(buf);
     Ok(())
@@ -668,6 +670,7 @@ impl ClientHandle {
             .send(req)
             .await
             .map_err(|e| SendError::ChanSendError(e))?;
+        assert!(!receiver.is_closed(), "no one loves you");
         let res = if let Some(res) = receiver.recv().await {
             Ok(res)
         } else {
@@ -824,6 +827,7 @@ pub trait HttpClient<'a> {
         let client_handle = client_handle.deref();
         let mut response_receiver = response_receiver.lock().await;
         let response_receiver = response_receiver.deref_mut();
+        assert!(!response_receiver.is_closed(), "fuck you");
         let start = SystemTime::now();
 
         let req = req.build();

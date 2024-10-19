@@ -6,7 +6,7 @@ use maud::html;
 use serde::Deserialize;
 use tokio::{runtime::Handle, sync::Mutex, task};
 
-use crate::{http_client::wfm_client::WFMClient, AppError};
+use crate::{http_client::wfm_client::WFMClient, server::{full, BoxBody}, AppError};
 
 #[derive(Deserialize, Debug)]
 struct Login {
@@ -18,7 +18,7 @@ pub fn uri_api_login(
     body: &str,
     wfm: Arc<Mutex<WFMClient>>,
     logged_in: Arc<Mutex<Option<bool>>>,
-) -> Result<Response<Full<Bytes>>, AppError> {
+) -> Result<Response<BoxBody>, AppError> {
     let (email, password) = {
         let log =
             serde_urlencoded::from_str::<Login>(body).expect("bruh this aint urlencoded tf u doin");
@@ -26,7 +26,11 @@ pub fn uri_api_login(
     };
 
     let status = {
-        let mut wfm = wfm.blocking_lock();
+        let mut wfm = tokio::task::block_in_place(|| {
+            Handle::current().block_on(async {
+                wfm.lock().await
+            })
+        });
         let wfm = wfm.deref_mut();
         task::block_in_place(move || {
             Handle::current().block_on(async move {
@@ -38,7 +42,11 @@ pub fn uri_api_login(
     // for testing
     let authorized = status.code == 200;
 
-    let mut logged_in = logged_in.blocking_lock();
+    let mut logged_in = tokio::task::block_in_place(|| {
+        Handle::current().block_on(async {
+            logged_in.lock().await
+        })
+    });
     let logged_in = logged_in.deref_mut();
     let pagecontent = if !authorized {
         html! {p id="login_failed" style="text-align: center; color: red;" {b {"Login Failed, Please try again"}}}
@@ -55,17 +63,17 @@ pub fn uri_api_login(
     } else {
         r
     };
-    let r = r.body(Full::new(Bytes::from(pagecontent.into_string())));
+    let r = r.body(full(pagecontent.into_string()));
     Ok(match r {
         Ok(v) => v,
         Err(_) => {
-            let mut resp = Response::new(Full::new(Bytes::new()));
+            let mut resp = Response::new(full(""));
             *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
             resp
         },
     })
 }
 
-pub fn uri_api_delete_riven(_id: &str) -> Response<Full<Bytes>> {
-    Response::new(Full::new(Bytes::new()))
+pub fn uri_api_delete_riven(_id: &str) -> Response<BoxBody> {
+    Response::new(full(""))
 }

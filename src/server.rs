@@ -1,9 +1,13 @@
 use hyper::body::{Bytes, Incoming};
+use hyper::server::conn::http2;
+use openssl::ssl::{SslAcceptor, SslAcceptorBuilder, SslContext, SslMethod};
 use tokio::{net::TcpListener, runtime::Handle, sync::Mutex};
+use tokio_native_tls::native_tls::Protocol;
+use tokio_native_tls::{native_tls, TlsAcceptor};
+use std::env;
 use std::{fs, future::Future, io, net::SocketAddr, pin::Pin, sync::Arc, time::SystemTime};
 use http_body_util::{BodyExt, Full};
-use hyper::server::conn::http2;
-use hyper::service::Service;
+use hyper::service::{service_fn, Service};
 use hyper::{Request, Response};
 
 use hyper_util::rt::{TokioExecutor, TokioIo};
@@ -31,67 +35,12 @@ struct ServerState {
     logged_in: Arc<Mutex<Option<bool>>>,
 }
 
-impl Service<Request<Incoming>> for ServerState {
-    type Response = Response<Full<Bytes>>;
-    type Error = hyper::Error;
-    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+pub type BoxBody = http_body_util::combinators::BoxBody<Bytes, hyper::Error>;
 
-    fn call(&self, mut req: Request<Incoming>) -> Self::Future {
-        let data = {
-            tokio::task::block_in_place(|| {
-                Handle::current().block_on(async {
-                    req.body_mut().collect().await.map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
-                })
-            })
-        }.unwrap();
-        let data = data.to_bytes();
-
-        let uri = req.uri().path();
-        let (root, other) = uri[1..].split_once('/').unwrap_or((&uri[1..], ""));
-
-        let body = String::from_utf8(data.into()).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string())).unwrap();
-        let body = if body.len() != 0 {
-            Some(body.as_str())
-        } else {
-            None
-        };
-        let res = match root {
-            "" | "/" => {
-                uri_main(self.wfm.clone(), self.logged_in.clone()).unwrap()
-            }
-            "htmx.min.js" => {
-                uri_htmx().unwrap()
-            }
-            "styles.css" => {
-                uri_styles().unwrap()
-            }
-            "api" => {
-                match_uri_api(other, body, self.wfm.clone(), self.logged_in.clone()).unwrap()
-            }
-            "login" => {
-                uri_login()
-            }
-            "home" => {
-                uri_home()
-            }
-            "edit" => {
-                uri_edit(self.edit_toggle.clone())
-            }
-            "logo.svg" => {
-                uri_logo().unwrap()
-            }
-            "wfm_favicon.ico" => {
-                uri_wfmlogo().unwrap()
-            }
-            "rivens" => {
-                uri_rivens(req.headers())
-            }
-            _ => {
-                uri_not_found()
-            }
-        };
-        Box::pin(async { Ok(res) })
-    }
+pub fn full<T: Into<Bytes>>(chunk: T) -> BoxBody {
+    Full::new(chunk.into())
+        .map_err(|never| match never {})
+        .boxed()
 }
 
 struct LastModified(SystemTime, SystemTime);
@@ -132,14 +81,28 @@ pub async fn start_server() {
 
     let listener = TcpListener::bind(addr).await.unwrap();
     println!("Listening on http://{}", addr);
+    let ident = native_tls::Identity::from_pkcs8(include_bytes!("../cert.crt"), include_bytes!("../key.pem")).expect("womp womp");
+    let acceptor = native_tls::TlsAcceptor::builder(ident)
+        .build()
+        .unwrap();
+    let acceptor = TlsAcceptor::from(acceptor);
 
     loop {
         let (stream, _) = listener.accept().await.unwrap();
+        let acceptor = acceptor.clone();
         println!("connection accepted");
-        let io = TokioIo::new(stream);
         let server_state = server_state.clone();
         tokio::task::spawn(async move {
-            if let Err(err) = http2::Builder::new(TokioExecutor::new()).serve_connection(io, server_state).await { // ????????????????????????????????????
+            let stream = acceptor.accept(stream).await.expect("FUCK YOU TLS");
+            let io = TokioIo::new(stream);
+            let service = service_fn(move |req| {
+                let server_state = server_state.clone();
+                async move {
+                    match_uri(req, server_state)
+                }
+            });
+            println!("serving connection");
+            if let Err(err) = http2::Builder::new(TokioExecutor::new()).serve_connection(io, service).await { // ????????????????????????????????????
                 println!("Failed to serve connection: {:?}", err);
             }
         });
@@ -168,7 +131,7 @@ fn match_uri_api(
     body: Option<&str>,
     wfm: Arc<Mutex<WFMClient>>,
     logged_in: Arc<Mutex<Option<bool>>>
-) -> Result<Response<Full<Bytes>>, AppError> {
+) -> Result<Response<BoxBody>, AppError> {
     let (root, other) = uri.split_once('/').unwrap_or((uri, ""));
     match root {
         "login" => {
@@ -181,4 +144,60 @@ fn match_uri_api(
             Ok(uri_not_found())
         }
     }
+}
+
+fn match_uri(mut req: Request<Incoming>, state: ServerState) -> Result<Response<BoxBody>, AppError> {
+    let data = {
+        tokio::task::block_in_place(|| {
+            Handle::current().block_on(async {
+                req.body_mut().collect().await.map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
+            })
+        })
+    }.unwrap();
+    let data = data.to_bytes();
+
+    let uri = req.uri().path();
+    let (root, other) = uri[1..].split_once('/').unwrap_or((&uri[1..], ""));
+
+    let body = String::from_utf8(data.into()).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string())).unwrap();
+    let body = if body.len() != 0 {
+        Some(body.as_str())
+    } else {
+        None
+    };
+    Ok(match root {
+        "" | "/" => {
+            uri_main(state.wfm.clone(), state.logged_in.clone()).unwrap()
+        }
+        "htmx.min.js" => {
+            uri_htmx().unwrap()
+        }
+        "styles.css" => {
+            uri_styles().unwrap()
+        }
+        "api" => {
+            match_uri_api(other, body, state.wfm.clone(), state.logged_in.clone()).unwrap()
+        }
+        "login" => {
+            uri_login()
+        }
+        "home" => {
+            uri_home()
+        }
+        "edit" => {
+            uri_edit(state.edit_toggle.clone())
+        }
+        "logo.svg" => {
+            uri_logo().unwrap()
+        }
+        "wfm_favicon.ico" => {
+            uri_wfmlogo().unwrap()
+        }
+        "rivens" => {
+            uri_rivens(req.headers())
+        }
+        _ => {
+            uri_not_found()
+        }
+    })
 }

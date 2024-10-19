@@ -1,4 +1,3 @@
-use ascii::AsciiString;
 use http_body_util::Full;
 use hyper::{body::Bytes, header::{HeaderValue, CONTENT_TYPE}, Request, Response, StatusCode};
 use tokio::{runtime::Handle, sync::Mutex};
@@ -6,11 +5,15 @@ use maud::{html, PreEscaped, DOCTYPE};
 use serde_json::from_str;
 use std::{io, ops::{Deref, DerefMut}, str::FromStr, sync::Arc, u8};
 
-use crate::{http_client::wfm_client::WFMClient, rivens::inventory::convert_raw_inventory::Item, AppError};
+use crate::{http_client::wfm_client::WFMClient, rivens::inventory::convert_raw_inventory::Item, server::{full, BoxBody}, AppError};
 
 
-pub fn uri_main(wfm: Arc<Mutex<WFMClient>>, logged_in: Arc<Mutex<Option<bool>>>) -> Result<Response<Full<Bytes>>, AppError> {
-    let mut logged_in = logged_in.blocking_lock();
+pub fn uri_main(wfm: Arc<Mutex<WFMClient>>, logged_in: Arc<Mutex<Option<bool>>>) -> Result<Response<BoxBody>, AppError> {
+    let mut logged_in = tokio::task::block_in_place(|| {
+        Handle::current().block_on(async {
+            logged_in.lock().await
+        })
+    });
     let logged_in = logged_in.deref_mut();
     let pagecontent = if logged_in.is_some() {
         html! {
@@ -25,7 +28,11 @@ pub fn uri_main(wfm: Arc<Mutex<WFMClient>>, logged_in: Arc<Mutex<Option<bool>>>)
         }
     } else {
         let valid = {
-            let mut wfm = wfm.blocking_lock();
+            let mut wfm = tokio::task::block_in_place(|| {
+                Handle::current().block_on(async {
+                    wfm.lock().await
+                })
+            });
             let wfm = wfm.deref_mut();
             tokio::task::block_in_place(move || {
                 Handle::current().block_on(async move {
@@ -63,10 +70,10 @@ pub fn uri_main(wfm: Arc<Mutex<WFMClient>>, logged_in: Arc<Mutex<Option<bool>>>)
     let charset = "text/html; charset=utf8".parse::<HeaderValue>().unwrap();
     Ok(match Response::builder()
         .header(CONTENT_TYPE, charset)
-        .body(Full::new(Bytes::from(pagecontent.into_string()))) {
+        .body(full(pagecontent.into_string())) {
         Ok(v) => v,
         Err(_) => {
-            let mut res = Response::new(Full::new(Bytes::new()));
+            let mut res = Response::new(full(""));
             *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
             res
         },
@@ -124,23 +131,27 @@ pub fn rivens() -> PreEscaped<String> {
     }
 }
 
-pub fn uri_home() -> Response<Full<Bytes>> {
+pub fn uri_home() -> Response<BoxBody> {
     let pagecontent = rivens();
     let cc = "text/html; charset=utf8".parse::<HeaderValue>().unwrap();
     match Response::builder()
         .header(CONTENT_TYPE, cc)
-        .body(Full::new(Bytes::from(pagecontent.into_string()))) {
+        .body(full(pagecontent.into_string())) {
         Ok(v) => v,
         Err(_) => {
-            let mut res = Response::new(Full::new(Bytes::new()));
+            let mut res = Response::new(full(""));
             *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
             res
         },
     }
 }
 
-pub fn uri_edit(edit_toggle: Arc<Mutex<bool>>) -> Response<Full<Bytes>> {
-    let mut edit_toggle = edit_toggle.blocking_lock();
+pub fn uri_edit(edit_toggle: Arc<Mutex<bool>>) -> Response<BoxBody> {
+    let mut edit_toggle = tokio::task::block_in_place(|| {
+        Handle::current().block_on(async {
+            edit_toggle.lock().await
+        })
+    });
     let edit_toggle = edit_toggle.deref_mut();
     let pagecontent = if !*edit_toggle {
         *edit_toggle = true;
@@ -171,18 +182,18 @@ pub fn uri_edit(edit_toggle: Arc<Mutex<bool>>) -> Response<Full<Bytes>> {
     let cc = "text/html; charset=utf8".parse::<HeaderValue>().unwrap();
     match Response::builder()
         .header(CONTENT_TYPE, cc)
-        .body(Full::new(Bytes::from(pagecontent.into_string())))
+        .body(full(pagecontent.into_string()))
     {
         Ok(v) => v,
         Err(_) => {
-            let mut res = Response::new(Full::new(Bytes::new()));
+            let mut res = Response::new(full(""));
             *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
             res
         },
     }
 }
 
-pub async fn uri_unauthorized() -> Response<Full<Bytes>> {
+pub async fn uri_unauthorized() -> Response<BoxBody> {
     let pagecontent = html! {
         (DOCTYPE)
         body {
@@ -196,18 +207,18 @@ pub async fn uri_unauthorized() -> Response<Full<Bytes>> {
     match Response::builder()
         .header(CONTENT_TYPE, cc)
         .status(401)
-        .body(Full::new(Bytes::from(pagecontent.into_string())))
+        .body(full(pagecontent.into_string()))
     {
         Ok(v) => v,
         Err(_) => {
-            let mut res = Response::new(Full::new(Bytes::new()));
+            let mut res = Response::new(full(""));
             *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
             res
         },
     }
 }
 
-pub fn uri_not_found() -> Response<Full<Bytes>> {
+pub fn uri_not_found() -> Response<BoxBody> {
     let pagecontent = html! {
         (DOCTYPE)
         body {
@@ -221,11 +232,11 @@ pub fn uri_not_found() -> Response<Full<Bytes>> {
     match Response::builder()
         .header(CONTENT_TYPE, cc)
         .status(404)
-        .body(Full::new(Bytes::from(pagecontent.into_string())))
+        .body(full(pagecontent.into_string()))
     {
         Ok(v) => v,
         Err(_) => {
-            let mut res = Response::new(Full::new(Bytes::new()));
+            let mut res = Response::new(full(""));
             *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
             res
         },

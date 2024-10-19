@@ -2,8 +2,10 @@ use http_body_util::Full;
 use hyper::{body::Bytes, header::CONTENT_TYPE, Response, StatusCode};
 use maud::html;
 
+use crate::server::{full, BoxBody};
 
-pub fn uri_login() -> Response<Full<Bytes>> {
+
+pub fn uri_login() -> Response<BoxBody> {
     let pagecontent = html! {
         div id="login_screen" hx-trigger="LoginSuccess from:body" hx-swap="outerHTML" hx-get="/home" {
             div class="row" {
@@ -37,11 +39,11 @@ pub fn uri_login() -> Response<Full<Bytes>> {
 
     match Response::builder()
         .header(CONTENT_TYPE, cc)
-        .body(Full::new(Bytes::from(pagecontent.into_string())))
+        .body(full(pagecontent.into_string()))
     {
         Ok(v) => v,
         Err(_) => {
-            let mut res = Response::new(Full::new(Bytes::new()));
+            let mut res = Response::new(full(""));
             *res.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
             res
         },

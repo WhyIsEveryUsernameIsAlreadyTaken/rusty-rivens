@@ -1,6 +1,7 @@
 use std::{error::Error, fmt::{self, Display}, sync::Arc};
 
 
+use dotenv::dotenv;
 use once_cell::sync::OnceCell;
 use serde::Deserialize;
 use server::start_server;
@@ -58,6 +59,7 @@ impl Error for AppError {}
 #[tokio::main]
 async fn main() -> wry::Result<()> {
     pretty_env_logger::init();
+    dotenv().unwrap();
     let server = tokio::task::spawn(start_server());
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
@@ -84,7 +86,7 @@ async fn main() -> wry::Result<()> {
     };
 
     let _webview = builder
-        .with_url("http://127.0.0.1:8000")
+        .with_url("https://127.0.0.1:3000")
         .with_drag_drop_handler(|e| {
             match e {
                 wry::DragDropEvent::Enter { paths, position } => {
