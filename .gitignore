@@ -22,4 +22,5 @@
 /key.key
 /key.pem
 /cert.crt
+/certificate.pem
 /san.cnf
