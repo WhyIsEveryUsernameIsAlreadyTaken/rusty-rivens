@@ -86,7 +86,7 @@ async fn main() -> wry::Result<()> {
     };
 
     let _webview = builder
-        .with_url("https://127.0.0.1:3000")
+        .with_url("https://localhost:3000")
         .with_drag_drop_handler(|e| {
             match e {
                 wry::DragDropEvent::Enter { paths, position } => {

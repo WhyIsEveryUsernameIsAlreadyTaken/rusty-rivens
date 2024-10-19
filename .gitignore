@@ -24,3 +24,7 @@
 /cert.crt
 /certificate.pem
 /san.cnf
+/openssl.cnf
+/refresh-certificates.sh
+/sample.pem
+/sample.rsa

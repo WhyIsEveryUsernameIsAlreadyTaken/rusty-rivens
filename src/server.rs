@@ -1,16 +1,17 @@
-use hyper::body::{Bytes, Incoming};
-use hyper::server::conn::http2;
-use openssl::ssl::{SslAcceptor, SslAcceptorBuilder, SslContext, SslMethod};
-use tokio::{net::TcpListener, runtime::Handle, sync::Mutex};
-use tokio_native_tls::native_tls::Protocol;
-use tokio_native_tls::{native_tls, TlsAcceptor};
-use std::env;
-use std::{fs, future::Future, io, net::SocketAddr, pin::Pin, sync::Arc, time::SystemTime};
 use http_body_util::{BodyExt, Full};
-use hyper::service::{service_fn, Service};
-use hyper::{Request, Response};
-
+use hyper::{body::{Bytes, Incoming}, service::service_fn, Request, Response};
 use hyper_util::rt::{TokioExecutor, TokioIo};
+use tokio::{net::TcpListener, runtime::Handle, sync::Mutex};
+use tokio_rustls::{rustls::ServerConfig, TlsAcceptor};
+use std::{fs, io::{self, BufReader}, net::{Ipv4Addr, SocketAddr}, sync::Arc, time::SystemTime};
+
+pub type BoxBody = http_body_util::combinators::BoxBody<Bytes, hyper::Error>;
+
+pub fn full<T: Into<Bytes>>(chunk: T) -> BoxBody {
+    Full::new(chunk.into())
+        .map_err(|never| match never {})
+        .boxed()
+}
 
 use crate::{
     api_operations::{uri_api_delete_riven, uri_api_login}, http_client::{
@@ -33,14 +34,6 @@ struct ServerState {
     wfm: Arc<Mutex<WFMClient>>,
     edit_toggle: Arc<Mutex<bool>>,
     logged_in: Arc<Mutex<Option<bool>>>,
-}
-
-pub type BoxBody = http_body_util::combinators::BoxBody<Bytes, hyper::Error>;
-
-pub fn full<T: Into<Bytes>>(chunk: T) -> BoxBody {
-    Full::new(chunk.into())
-        .map_err(|never| match never {})
-        .boxed()
 }
 
 struct LastModified(SystemTime, SystemTime);
@@ -77,34 +70,45 @@ pub async fn start_server() {
         edit_toggle: Arc::new(Mutex::new(edit_toggle)),
         logged_in: Arc::new(Mutex::new(logged_in)),
     };
-    let addr: SocketAddr = ([127, 0, 0, 1], 3000).into();
+    let addr = SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 3000);
+
+    let certfile = fs::File::open("sample.pem").expect("TwT");
+    let mut buf_reader = BufReader::new(certfile);
+    let certs = rustls_pemfile::certs(&mut buf_reader).map(|cert| cert.expect("failed to parse cert")).collect();
+    let keyfile = fs::File::open("sample.rsa").expect("qwq");
+    let mut buf_reader = BufReader::new(keyfile);
+    let key = rustls_pemfile::private_key(&mut buf_reader).expect("failed to parse key").expect("no private key");
 
     let listener = TcpListener::bind(addr).await.unwrap();
-    println!("Listening on http://{}", addr);
-    let ident = native_tls::Identity::from_pkcs8(include_bytes!("../cert.crt"), include_bytes!("../key.pem")).expect("womp womp");
-    let acceptor = native_tls::TlsAcceptor::builder(ident)
-        .build()
-        .unwrap();
-    let acceptor = TlsAcceptor::from(acceptor);
+    println!("Listening on https://{}", addr);
+
+    let _ = rustls::crypto::ring::default_provider().install_default();
+
+    let mut server_config = ServerConfig::builder()
+        .with_no_client_auth()
+        .with_single_cert(certs, key)
+        .expect("all this shit has to work, no exceptions");
+    server_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec(), b"http/1.0".to_vec()];
+    let tls_acceptor = TlsAcceptor::from(Arc::new(server_config));
 
     loop {
-        let (stream, _) = listener.accept().await.unwrap();
-        let acceptor = acceptor.clone();
-        println!("connection accepted");
+        let (stream, addr) = listener.accept().await.unwrap();
+        println!("connection accepted for {addr}");
+        let tls_acceptor = tls_acceptor.clone();
         let server_state = server_state.clone();
-        tokio::task::spawn(async move {
-            let stream = acceptor.accept(stream).await.expect("FUCK YOU TLS");
-            let io = TokioIo::new(stream);
-            let service = service_fn(move |req| {
-                let server_state = server_state.clone();
-                async move {
-                    match_uri(req, server_state)
-                }
-            });
-            println!("serving connection");
-            if let Err(err) = http2::Builder::new(TokioExecutor::new()).serve_connection(io, service).await { // ????????????????????????????????????
-                println!("Failed to serve connection: {:?}", err);
+        let service = service_fn(move |req| {
+            let server_state = server_state.clone();
+            async move {
+                match_uri(req, server_state)
             }
+        });
+        tokio::spawn(async move {
+            let stream = tls_acceptor.accept(stream).await.expect("FUCK YOU TLS");
+            if let Err(err) = hyper_util::server::conn::auto::Builder::new(TokioExecutor::new())
+                .serve_connection(TokioIo::new(stream), service).await {
+                println!("Failed to serve connection for {addr}: {:#}", err)
+            };
+            println!("serving connection");
         });
     }
 
@@ -156,6 +160,7 @@ fn match_uri(mut req: Request<Incoming>, state: ServerState) -> Result<Response<
     }.unwrap();
     let data = data.to_bytes();
 
+    println!("{}", req.uri().path());
     let uri = req.uri().path();
     let (root, other) = uri[1..].split_once('/').unwrap_or((&uri[1..], ""));
 

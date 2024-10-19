@@ -1,7 +1,6 @@
 use std::{
     ops::{Deref, DerefMut},
     sync::Arc,
-    thread::JoinHandle,
     time::Duration,
 };
 
@@ -132,25 +131,21 @@ impl WFMClient {
             Err(e) => return Err(AppError::new(e.to_string(), String::from("login: "))),
         };
         let (val, headers) = response.res;
-        let token: Arc<str>;
-        if let Some(cookie_header) = headers.get("Set-Cookie") {
+        let token = if let Some(cookie_header) = headers.get("Set-Cookie") {
             let cookies = &cookie_header;
-            token = cookies[4..].split_once(';').unwrap_or(("", "")).0.into();
+            cookies[4..].split_once(';').unwrap_or(("", "")).0.into()
         } else {
-            panic!("No access token returned!");
+            println!("WARNING: No access token returned!");
+            "".into()
         };
         let mut user = AuthState::default();
         if response.status.code < 300 {
-            if let Some(_) = val {
-                // let data = v["payload"]["user"].clone();
-                // let data = data.to_string();
-                // println!("{data}");
-                // user = serde_json::from_str(data.as_str()).map_err(|e| {
-                //     AppError::new(
-                //         e.to_string(),
-                //         String::from("login: from_str"),
-                //     )
-                // })?;
+            if let Some(v) = val {
+                let data = v["payload"]["user"].clone();
+                let ingame_name = data["ingame_name"].clone();
+                let id = data["id"].clone();
+                user.ingame_name = ingame_name.as_str().expect("stwing pwetty pwease").into();
+                user.id = id.as_str().expect("stwing pwetty pwease").into();
                 user.access_token = token;
                 user.update().map_err(|e| e.prop("login: ".into()))?;
             }
@@ -161,7 +156,7 @@ impl WFMClient {
 
     pub async fn validate(&mut self) -> Result<bool, AppError> {
         let valid_jwt = if !self.auth.access_token.is_empty() {
-            jwt_is_valid(&self.auth.access_token).map_err(|e| e.prop("validate".into()))?
+            jwt_is_valid(self.auth.access_token.deref()).map_err(|e| e.prop("validate".into()))?
         } else {
             println!("WARNING: No JWT Found");
             return Ok(false);

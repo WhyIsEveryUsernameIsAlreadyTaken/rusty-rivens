@@ -257,9 +257,10 @@ async fn collect_payload_chunk(
     size: usize,
     reader: &mut BufReader<&mut TlsStream<TcpStream>>,
 ) -> Result<(), SendError> {
-    let mut buf: Vec<u8> = Vec::with_capacity(size);
+    let mut buf = vec![0; size];
     assert!(buf.capacity() >= size, "pp too small: {} vs {size}", buf.capacity());
-    reader.read_exact(&mut buf).await.expect("grrrrrr");
+    let length = reader.read_exact(&mut buf).await.expect("grrrrrr");
+    assert!(length > 0);
     let buf = String::from_utf8(buf).unwrap();
     let buf = buf.as_str();
     out.push_str(buf);
@@ -372,7 +373,10 @@ impl Request {
                 None => host,
             };
             let body = match self.body.as_ref() {
-                Some(v) => v.to_string(),
+                Some(v) => {
+                let v = v.to_string();
+                v
+            },
                 None => "".to_string(),
             };
             let body = body.as_str();
@@ -410,7 +414,6 @@ impl Request {
                 "{} {} HTTP/1.1\r\nHost: {}{}\r\n\r\n{}",
                 method, &uri, host, headers, body
             );
-            // println!("{req}");
             Ok(req)
         }
 }
@@ -812,9 +815,6 @@ pub trait HttpClient<'a> {
         &mut self,
         req: Request,
     ) -> Result<ApiResult, AppError> {
-        let req = RequestBuilder::new()
-            .uri(req.uri.expect("You must have a uri").deref())
-            .method(req.method.expect("You must have a method"));
         // .header(
         //     "Authorization",
         //     format!("JWT {}", auth.access_token.clone().unwrap_or("".into())),

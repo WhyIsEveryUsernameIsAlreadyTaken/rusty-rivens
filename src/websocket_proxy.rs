@@ -1,9 +1,6 @@
-use std::str::FromStr;
-
-use ascii::AsciiString;
-use http_body_util::Full;
-use hyper::{body::Bytes, header::{HeaderValue, CONNECTION, SEC_WEBSOCKET_ACCEPT, SEC_WEBSOCKET_KEY, SEC_WEBSOCKET_VERSION, UPGRADE}, HeaderMap, Response, StatusCode};
+use hyper::{header::{CONNECTION, SEC_WEBSOCKET_ACCEPT, SEC_WEBSOCKET_KEY, SEC_WEBSOCKET_VERSION, UPGRADE}, HeaderMap, Response, StatusCode};
 use openssl::{base64, sha::sha1};
+use wry::http::HeaderValue;
 
 use crate::server::{full, BoxBody};
 
