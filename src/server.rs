@@ -1,23 +1,16 @@
 use ascii::AsciiString;
 use async_lock::Mutex;
 use once_cell::sync::OnceCell;
-use std::{fs, io::{self}, sync::Arc, time::SystemTime};
+use std::{
+    fs, io::{self}, sync::Arc, thread, time::SystemTime
+};
 use tiny_http::Request;
 
 use crate::{
-    api_operations::{uri_api_delete_riven, uri_api_login}, http_client::{
-        auth_state::AuthState, wfm_client::WFMClient
-    }, pages::{
-        home::{
-            uri_edit, uri_home, uri_main, uri_not_found, uri_unauthorized
-        },
-        login::uri_login
-    }, resources::{
-        uri_htmx,
-        uri_logo,
-        uri_styles,
-        uri_wfmlogo
-    }, rivens::inventory::database::InventoryDB, AppError, STOPPED
+    api_operations::{uri_api_delete_riven, uri_api_login}, http_client::{auth_state::AuthState, wfm_client::WFMClient}, pages::{
+        home::{uri_edit, uri_home, uri_main, uri_not_found, uri_unauthorized},
+        login::uri_login,
+    }, resources::{uri_htmx, uri_logo, uri_styles, uri_wfmlogo}, rivens::inventory::database::InventoryDB, websocket::start_websocket, AppError, STOPPED
 };
 
 #[derive(Debug)]
@@ -56,7 +49,8 @@ pub(crate) fn start_server() -> Result<(), AppError> {
     let head = rq.headers().iter().find(|&v| v.field.equiv("User-Agent"));
     let head = head.unwrap().value.clone();
     USER.set(User(Some(head))).unwrap();
-    println!("received request! method: {:?}, url: {:?}",
+    println!(
+        "received request! method: {:?}, url: {:?}",
         rq.method(),
         rq.url(),
     );
@@ -68,25 +62,33 @@ pub(crate) fn start_server() -> Result<(), AppError> {
         None,
         &mut edit_toggle,
         &mut logged_in,
-    ).map_err(|e| e.prop("start_server".into()))?;
+    )
+    .map_err(|e| e.prop("start_server".into()))?;
 
     let mut last_modified = LastModified(SystemTime::UNIX_EPOCH, SystemTime::UNIX_EPOCH);
     let db = InventoryDB::open("inventory.sqlite3")
-        .map_err(
-            |e| AppError::new(e.to_string(), "start_server: InventoryDB::open".to_string())
-        )?;
+        .map_err(|e| AppError::new(e.to_string(), "start_server: InventoryDB::open".to_string()))?;
 
     let db = Arc::new(Mutex::new(db));
     // let lookup = Arc::new(RivenDataLookup::setup().unwrap());
+    let websocket = thread::spawn(|| start_websocket());
 
     loop {
         if let Some(mut rq) = s.try_recv().unwrap() {
-            println!("received request! method: {:?}, url: {:?}",
+            println!(
+                "received request! method: {:?}, url: {:?}",
                 rq.method(),
                 rq.url(),
             );
             if let User(Some(u)) = USER.get().unwrap() {
-                if &rq.headers().iter().find(|&v| v.field.equiv("User-Agent")).unwrap().value != u {
+                if &rq
+                    .headers()
+                    .iter()
+                    .find(|&v| v.field.equiv("User-Agent"))
+                    .unwrap()
+                    .value
+                    != u
+                {
                     uri_unauthorized(rq).unwrap();
                     continue;
                 }
@@ -101,7 +103,8 @@ pub(crate) fn start_server() -> Result<(), AppError> {
                 Some(body.as_str()),
                 &mut edit_toggle,
                 &mut logged_in,
-            ).map_err(|e| e.prop("start_server: spawn".into()))?;
+            )
+            .map_err(|e| e.prop("start_server: spawn".into()))?;
         } else {
             if STOPPED.get() == Some(&true) {
                 break;
@@ -124,7 +127,7 @@ pub(crate) fn start_server() -> Result<(), AppError> {
         //         }
         //     });
         // }
-    };
+    }
     println!("SERVER CLOSED");
     Ok(())
 }
@@ -139,39 +142,31 @@ fn handle_request(
 ) -> Result<(), AppError> {
     let (root, other) = uri[1..].split_once('/').unwrap_or((&uri[1..], ""));
     match root {
-        "" | "/" => {
-            uri_main(rq, wfm, logged_in).map_err(|e| e.prop("handle_request".into()))
-        }
+        "" | "/" => uri_main(rq, wfm, logged_in).map_err(|e| e.prop("handle_request".into())),
         "htmx.min.js" => {
             uri_htmx(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
         }
         "styles.css" => {
             uri_styles(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
         }
-        "api" => {
-            match_uri_api(rq, other, body, wfm, logged_in).map_err(|e| e.prop("handle_request".into()))
-        }
+        "api" => match_uri_api(rq, other, body, wfm, logged_in)
+            .map_err(|e| e.prop("handle_request".into())),
         "login" => {
             uri_login(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
         }
         "home" => {
             uri_home(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
         }
-        "edit" => {
-            uri_edit(rq, edit_toggle).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
-        }
+        "edit" => uri_edit(rq, edit_toggle)
+            .map_err(|e| AppError::new(e.to_string(), "handle_request".to_string())),
         "logo.svg" => {
             uri_logo(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
         }
         "wfm_favicon.ico" => {
             uri_wfmlogo(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
         }
-        "rivens" => {
-            uri_rivens(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
-        }
-        _ => {
-            uri_not_found(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
-        }
+        _ => uri_not_found(rq)
+            .map_err(|e| AppError::new(e.to_string(), "handle_request".to_string())),
     }
 }
 
@@ -180,18 +175,16 @@ fn match_uri_api(
     uri: &str,
     body: Option<&str>,
     wfm: Arc<Mutex<WFMClient>>,
-    logged_in: &mut Option<bool>
+    logged_in: &mut Option<bool>,
 ) -> Result<(), AppError> {
     let (root, other) = uri.split_once('/').unwrap_or((uri, ""));
     match root {
-        "login" => {
-            uri_api_login(rq, body.unwrap(), wfm.clone(), logged_in).map_err(|e| e.prop("match_uri_api".into()))
-        }
+        "login" => uri_api_login(rq, body.unwrap(), wfm.clone(), logged_in)
+            .map_err(|e| e.prop("match_uri_api".into())),
         "delete_riven" => {
             uri_api_delete_riven(rq, other).map_err(|e| e.prop("match_uri_api".into()))
         }
-        _ => {
-            uri_not_found(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
-        }
+        _ => uri_not_found(rq)
+            .map_err(|e| AppError::new(e.to_string(), "handle_request".to_string())),
     }
 }

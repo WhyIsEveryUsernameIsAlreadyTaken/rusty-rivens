@@ -20,7 +20,7 @@ mod file_consts;
 mod rivens;
 mod riven_data_store;
 mod api_operations;
-mod websocket_proxy;
+mod websocket;
 mod http_client;
 
 static STOPPED: OnceCell<bool> = once_cell::sync::OnceCell::new();

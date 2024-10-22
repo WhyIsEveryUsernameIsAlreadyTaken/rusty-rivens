@@ -19,3 +19,9 @@
 /inventory.sqlite
 /rivens.json
 /rivens_pretty.json
+/key.pem
+/openssl.cnf
+/refresh-certificates.sh
+/sample.pem
+/sample.rsa
+/ws.js

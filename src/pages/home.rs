@@ -15,7 +15,7 @@ pub fn uri_main(rq: Request, wfm: Arc<Mutex<WFMClient>>, logged_in: &mut Option<
             head {
                 (PreEscaped("<script src=\"/htmx.min.js\"></script>"))
                 (PreEscaped("<link rel=\"stylesheet\" href=\"/styles.css\" />"))
-                (PreEscaped("<script src=\"/htmx.min.js\"></script>"))
+                (PreEscaped("<script src=\"https://unpkg.com/htmx.org@1.9.12/dist/ext/ws.js\"></script>"))
                 body {
                     div hx-get="/home" hx-swap="outerHTML" hx-trigger="load";
                 };
@@ -34,7 +34,7 @@ pub fn uri_main(rq: Request, wfm: Arc<Mutex<WFMClient>>, logged_in: &mut Option<
                 head {
                     (PreEscaped("<script src=\"/htmx.min.js\"></script>"))
                     (PreEscaped("<link rel=\"stylesheet\" href=\"/styles.css\" />"))
-                    (PreEscaped("<script src=\"/htmx.min.js\"></script>"))
+                    (PreEscaped("<script src=\"https://unpkg.com/htmx.org@1.9.12/dist/ext/ws.js\"></script>"))
                     body {
                         div hx-get="/home" hx-swap="outerHTML" hx-trigger="load";
                     };
@@ -46,7 +46,7 @@ pub fn uri_main(rq: Request, wfm: Arc<Mutex<WFMClient>>, logged_in: &mut Option<
                 head {
                     (PreEscaped("<script src=\"/htmx.min.js\"></script>"))
                     (PreEscaped("<link rel=\"stylesheet\" href=\"/styles.css\" />"))
-                    (PreEscaped("<script src=\"/htmx.min.js\"></script>"))
+                    (PreEscaped("<script src=\"https://unpkg.com/htmx.org@1.9.12/dist/ext/ws.js\"></script>"))
                     body {
                         div hx-get="/login" hx-swap="outerHTML" hx-trigger="load";
                     };
@@ -102,18 +102,18 @@ pub fn rivens() -> PreEscaped<String> {
             }
         }
     });
-    html! {
-        div style="justify-content: center;" {
-            div class="row" {
-                (pagecontent)
-            }
-        }
-        div id="edit_screen";
-    }
+    pagecontent
 }
 
 pub fn uri_home(rq: Request) -> io::Result<()> {
-    let pagecontent = rivens();
+    let pagecontent = html! {
+    div style="justify-content: center;" {
+        div hx-ext="ws" ws-connect="ws://localhost:8069"
+            div id="riven-table" class="row" {
+            }
+        }
+        div id="edit_screen";
+    };
     rq.respond(tiny_http::Response::from_string(pagecontent.into_string()).with_header(tiny_http::Header {
         field: "Content-Type".parse().unwrap(),
         value: AsciiString::from_ascii("text/html; charset=utf8").unwrap(),
