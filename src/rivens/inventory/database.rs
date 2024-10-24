@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, types::FromSql, Connection};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use super::convert_raw_inventory::{Attribute, Item};
+use super::convert_raw_inventory::{Attribute, Item, Units};
 
 pub struct InventoryDB {
     connection: Connection,
@@ -42,7 +42,7 @@ static SQL_TABLE_ITEMS: &str = "CREATE TABLE IF NOT EXISTS items ( item_id text 
 static SQL_TABLE_ATTRIBUTES: &str = "CREATE TABLE IF NOT EXISTS attributes ( item_id text, value float, positive bit, url_name text, short_string text)";
 static SQL_TABLE_AUCTIONS: &str = "CREATE TABLE IF NOT EXISTS auctions ( item_id text primary key, wfm_id text, starting_price integer, buyout_price integer, owner text, updated datetime, is_direct_sell bit)";
 
-static SQL_ATTRIBUTE_INSERT: &str = "INSERT INTO attributes ( item_id, value, positive, url_name, short_string) values (?1, ?2, ?3, ?4)";
+static SQL_ATTRIBUTE_INSERT: &str = "INSERT INTO attributes ( item_id, value, positive, units, url_name, short_string) values (?1, ?2, ?3, ?4, ?5, ?6)";
 static SQL_AUCTION_INSERT: &str = "INSERT INTO auctions ( oid, wfm_id, starting_price, buyout_price, owner, updated, is_direct_sell) values (?1, ?2, ?3, ?4, ?5, ?6, ?7)";
 static SQL_ITEM_INSERT: &str = "INSERT INTO items ( item_id, mastery_level, name, weapon_name, polarity, weapon_url_name, re_rolls, mod_rank) values (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)";
 
@@ -53,6 +53,7 @@ static SQL_SELECT_AUCTIONS: &str = "SELECT * FROM auctions";
 static SQL_DELETE_ITEMS: &str = "DELETE FROM items WHERE item_id = ?1";
 static SQL_DELETE_ATTRIBUTES: &str = "DELETE FROM attributes WHERE item_id = ?1";
 static SQL_DELETE_AUCTIONS: &str = "DELETE FROM auctions WHERE oid = ?1";
+
 
 impl InventoryDB {
     pub fn open(custom_path: &str) -> Result<Self, rusqlite::Error> {
@@ -92,7 +93,7 @@ impl InventoryDB {
         tx.commit()
     }
 
-    pub(super) fn attribute_insert(&mut self, attributes: Vec<Attribute>, oid: &str) -> Result<(), rusqlite::Error> {
+    pub(super) fn insert_attributes(&mut self, attributes: Vec<Attribute>, oid: &str) -> Result<(), rusqlite::Error> {
         let tx = self.connection.transaction()?;
         let mut attr_insert = tx.prepare(SQL_ATTRIBUTE_INSERT)?;
 
@@ -101,6 +102,7 @@ impl InventoryDB {
                 &oid,
                 &attr.value,
                 &attr.positive,
+                &attr.units,
                 &attr.url_name,
                 &attr.short_string,
             ]);
@@ -175,10 +177,13 @@ impl InventoryDB {
     fn select_attributes(&self, oid: Arc<str>) -> Result<Vec<Attribute>, rusqlite::Error> {
         let mut attributes_select = self.connection.prepare(SQL_SELECT_ATTRIBUTES)?;
         let attributes = attributes_select.query_map(&[&oid], |row| {
+            let units: String = row.get("units")?;
+            let units = Units::try_from(units).expect("Units must be parsed correctly");
             Ok(Attribute {
                 value: row.get("value")?,
                 positive: row.get("positive")?,
                 url_name: row.get("url_name")?,
+                units,
                 short_string: row.get("short_string")?,
             })
         })?.try_fold(vec![], |mut acc, attr| -> Result<Vec<Attribute>, rusqlite::Error> {

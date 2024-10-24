@@ -1,8 +1,6 @@
-use core::panic;
-use std::{io::{self, Write}, net::TcpListener, sync::Arc};
+use std::net::TcpListener;
 
 use maud::html;
-use tungstenite::{handshake::{machine::{HandshakeMachine, StageResult}, server::NoCallback, MidHandshake}, protocol::Role, HandshakeError, ServerHandshake};
 use crate::pages::home::rivens;
 
 pub fn start_websocket() {

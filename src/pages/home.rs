@@ -5,7 +5,7 @@ use serde_json::from_str;
 use std::{io::{self}, ops::Deref, sync::Arc};
 use tiny_http::{Request, Response, StatusCode};
 
-use crate::{http_client::wfm_client::WFMClient, rivens::inventory::convert_raw_inventory::Item, AppError};
+use crate::{http_client::wfm_client::WFMClient, rivens::inventory::convert_raw_inventory::{Item, Units}, AppError};
 
 
 pub fn uri_main(rq: Request, wfm: Arc<Mutex<WFMClient>>, logged_in: &mut Option<bool>) -> Result<(), AppError> {
@@ -68,10 +68,23 @@ pub fn rivens() -> PreEscaped<String> {
     let pagecontent = rivens.iter().fold(PreEscaped::default(),|acc, riven| {
         let title = format!("{} {}", riven.weapon_name, riven.name);
         let stats = riven.attributes.iter().fold(PreEscaped::default(), |acc, attr|{
-            let stat = if attr.positive {
-                format!("+{} {}", attr.value, attr.short_string)
-            } else {
-                format!("{} {}", attr.value, attr.short_string)
+            let stat = match attr.units {
+                Units::Percent => {
+                    if attr.positive {
+                        format!("+{}% {}", attr.value, attr.short_string)
+                    } else {
+                        format!("-{}% {}", attr.value, attr.short_string)
+                    }
+                },
+                Units::Multiply => format!("x{} {}", attr.value, attr.short_string),
+                Units::Seconds => {
+                    if attr.positive {
+                        format!("+{}s {}", attr.value, attr.short_string)
+                    } else {
+                        format!("-{}s {}", attr.value, attr.short_string)
+                    }
+                },
+                Units::Null => format!("{} {}", attr.value, attr.short_string),
             };
             html! {
                 (acc)
@@ -79,6 +92,7 @@ pub fn rivens() -> PreEscaped<String> {
             }
         });
         let oid = riven.oid.clone();
+        let id = format!("a{oid}");
         let uri = format!("/api/delete_riven/{oid}");
 
         // let height = format!("height: calc(126px + (2.2em * {}));", riven.attributes.len());
