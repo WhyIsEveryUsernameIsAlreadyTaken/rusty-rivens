@@ -932,6 +932,9 @@ pub trait HttpClient<'a> {
         if response.is_err() {
             println!("Response body: {content}");
         }
+        if status.code >= 400 {
+            println!("Response body: {content}");
+        }
         let response = response?;
 
         Ok(ApiResult {

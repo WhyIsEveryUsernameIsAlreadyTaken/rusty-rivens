@@ -1,6 +1,7 @@
 use std::{cmp::Ordering, error::Error, fmt::Display, ops::Deref, rc::Rc, sync::Arc};
 
 use super::riven_lookop::RivenDataLookup;
+use rusqlite::{types::FromSql, ToSql};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -86,6 +87,7 @@ pub struct Attribute {
     pub value: f64,
     pub positive: bool,
     pub url_name: String,
+    pub units: Units,
     pub short_string: String,
 }
 
@@ -260,6 +262,7 @@ fn calculate_attributes(
             value,
             positive: attr.positive,
             short_string: short_string.to_string(),
+            units: attr.units.clone(),
             url_name: attr.wfm_url.to_string(),
         });
     });
@@ -425,11 +428,39 @@ enum RivenLookupField {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, PartialOrd)]
-enum Units {
+pub enum Units {
     Percent,
     Multiply,
     Seconds,
     Null,
+}
+
+#[derive(Debug)]
+pub struct InvalidUnitType(Arc<str>);
+
+impl TryFrom<String> for Units {
+    type Error = InvalidUnitType;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        match value.as_str() {
+            "Percent" => Ok(Units::Percent),
+            "Multiply" => Ok(Units::Multiply),
+            "Seconds" => Ok(Units::Seconds),
+            "Null" => Ok(Units::Null),
+            _ => Err(InvalidUnitType(value.into()))
+        }
+    }
+}
+
+impl ToSql for Units {
+    fn to_sql(&self) -> rusqlite::Result<rusqlite::types::ToSqlOutput<'_>> {
+        match self {
+            Units::Percent => "Percent".to_sql(),
+            Units::Multiply => "Multiply".to_sql(),
+            Units::Seconds => "Seconds".to_sql(),
+            Units::Null => "Null".to_sql(),
+        }
+    }
 }
 
 #[derive(Debug)]
