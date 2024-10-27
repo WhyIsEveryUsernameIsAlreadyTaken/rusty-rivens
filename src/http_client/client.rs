@@ -773,7 +773,7 @@ async fn connect(
 
 pub type ArcClientHandle = Arc<Mutex<ClientHandle>>;
 
-pub trait HttpClient<'a> {
+pub trait HttpClient {
     async fn sender_fn(&mut self, rq: RequestBuilder) -> Result<(ArcClientHandle, Receiver<Response>, RequestBuilder), AppError>;
     async fn rate_limit(&self);
     async fn send_request(

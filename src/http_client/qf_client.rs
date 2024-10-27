@@ -14,7 +14,7 @@ pub struct QFClient {
     client_handle: Option<ArcClientHandle>
 }
 
-impl<'a> HttpClient<'a> for QFClient {
+impl HttpClient for QFClient {
     async fn sender_fn(&mut self, rq: super::client::RequestBuilder) -> Result<(ArcClientHandle, tokio::sync::mpsc::Receiver<super::client::Response>, super::client::RequestBuilder), AppError> {
         let auth_mutex = self.auth.lock().await;
         let auth = auth_mutex.deref();

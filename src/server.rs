@@ -33,11 +33,9 @@ impl LastModified {
     }
 }
 
-#[tokio::main]
 pub async fn start_server() -> Result<(), AppError> {
     dotenv().expect("bleh");
     let s = tiny_http::Server::http("127.0.0.1:8000").unwrap();
-    let mut edit_toggle = false;
     let mut logged_in: Option<bool> = None;
     println!("SERVER STARTED");
     if STOPPED.get().is_some() {
@@ -69,7 +67,6 @@ pub async fn start_server() -> Result<(), AppError> {
         wfm_client.clone(),
         qf_client.clone(),
         None,
-        &mut edit_toggle,
         &mut logged_in,
     )
     .map_err(|e| e.prop("start_server".into()))?;
@@ -82,7 +79,7 @@ pub async fn start_server() -> Result<(), AppError> {
     let lookup = Arc::new(RivenDataLookup::setup().await.expect(
         "FATAL: Could not retrieve riven lookup data"
     ));
-    let websocket = thread::spawn(|| start_websocket());
+    thread::spawn(|| start_websocket());
 
     let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();
 
@@ -115,7 +112,6 @@ pub async fn start_server() -> Result<(), AppError> {
                 wfm_client.clone(),
                 qf_client.clone(),
                 Some(body.as_str()),
-                &mut edit_toggle,
                 &mut logged_in,
             )
             .map_err(|e| e.prop("start_server: spawn".into()))?;
@@ -152,7 +148,6 @@ fn handle_request(
     wfm: Arc<Mutex<WFMClient>>,
     qf: Arc<Mutex<QFClient>>,
     body: Option<&str>,
-    edit_toggle: &mut bool,
     logged_in: &mut Option<bool>,
 ) -> Result<(), AppError> {
     let (root, other) = uri[1..].split_once('/').unwrap_or((&uri[1..], ""));
@@ -172,7 +167,7 @@ fn handle_request(
         "home" => {
             uri_home(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
         }
-        "edit" => uri_edit_open(rq)
+        "edit" => uri_edit_open(rq, other)
             .map_err(|e| AppError::new(e.to_string(), "handle_request".to_string())),
         "edit_cancel" => uri_edit_cancel(rq)
             .map_err(|e| AppError::new(e.to_string(), "handle_request".to_string())),

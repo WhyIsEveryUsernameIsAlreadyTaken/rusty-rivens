@@ -65,8 +65,9 @@ macro_rules! block_in_place {
     };
 }
 
-fn main() -> wry::Result<()> {
-    thread::spawn(|| start_server().unwrap());
+#[tokio::main]
+async fn main() -> wry::Result<()> {
+    tokio::task::spawn(start_server());
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
 

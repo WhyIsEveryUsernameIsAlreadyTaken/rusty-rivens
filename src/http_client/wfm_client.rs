@@ -21,7 +21,7 @@ pub struct WFMClient {
     client_handle: Option<ArcClientHandle>
 }
 
-impl<'a> HttpClient<'a> for WFMClient {
+impl HttpClient for WFMClient {
     async fn sender_fn(&mut self, rq: RequestBuilder) -> Result<(ArcClientHandle, Receiver<Response>, RequestBuilder), AppError> {
         let mut limiter_mutex = self.limiter.lock().await;
         let limiter = limiter_mutex.deref_mut();

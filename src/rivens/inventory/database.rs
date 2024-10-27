@@ -136,16 +136,15 @@ impl InventoryDB {
         tx.commit()
     }
 
-    pub(super) fn delete_items_auctions(&mut self, items: Vec<Item>) -> Result<(), rusqlite::Error> {
-        items.into_iter().try_for_each(|item| -> Result<(), rusqlite::Error> {
-            let item_id = item.oid.clone();
+    pub(super) fn delete_items_auctions(&mut self, items: Vec<Arc<str>>) -> Result<(), rusqlite::Error> {
+        items.into_iter().try_for_each(|oid| -> Result<(), rusqlite::Error> {
             let mut items_delete = self.connection.prepare(SQL_DELETE_ITEMS)?;
             let mut attrs_delete = self.connection.prepare(SQL_DELETE_ATTRIBUTES)?;
             let mut aucs_delete = self.connection.prepare(SQL_DELETE_AUCTIONS)?;
 
-            items_delete.execute(&[&item_id])?;
-            attrs_delete.execute(&[&item_id])?;
-            aucs_delete.execute(&[&item_id])?;
+            items_delete.execute(&[&oid])?;
+            attrs_delete.execute(&[&oid])?;
+            aucs_delete.execute(&[&oid])?;
             Ok(())
         })
     }

@@ -77,7 +77,7 @@ pub fn uri_edit_cancel(rq: Request) -> io::Result<()> {
     rq.respond(Response::empty(200))
 }
 
-pub fn uri_edit_open(rq: Request) -> io::Result<()> {
+pub fn uri_edit_open(rq: Request, id: &str) -> io::Result<()> {
     let title = format!("Edit <RIVENNAME>");
     let pagecontent = html! {
         div id="edit_screen" style="display: block;" {
