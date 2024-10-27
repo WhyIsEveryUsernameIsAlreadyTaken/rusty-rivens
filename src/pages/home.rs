@@ -3,7 +3,7 @@ use async_lock::Mutex;
 use maud::{html, PreEscaped, DOCTYPE};
 use serde_json::from_str;
 use std::{io::{self}, ops::Deref, sync::Arc};
-use tiny_http::{Request, StatusCode};
+use tiny_http::{Request, Response, StatusCode};
 
 use crate::{http_client::wfm_client::WFMClient, rivens::inventory::convert_raw_inventory::Item, AppError};
 
@@ -94,7 +94,7 @@ pub fn rivens() -> PreEscaped<String> {
                 }
                 div class="cellfooterdiv" {
                     div style="float: left;" {
-                        button class="cellbutton" hx-post="/edit" hx-target="#edit_screen" hx-swap="outerHTML" {"Edit"}
+                        button class="cellbutton" hx-post="/edit" hx-target="#screen" hx-swap="beforeend" {"Edit"}
                         button class="cellbutton" hx-delete=(uri) hx-target="closest .cell" hx-swap="outerHTML" style="background-color: #ff4444;" {"Delete"}
                     }
                     // img src="/wfm_favicon.ico" style="float: right; margin-left: 23px; padding-right: 13px;";
@@ -107,12 +107,11 @@ pub fn rivens() -> PreEscaped<String> {
 
 pub fn uri_home(rq: Request) -> io::Result<()> {
     let pagecontent = html! {
-    div style="justify-content: center;" {
+    div id="screen" style="justify-content: center;" {
         div hx-ext="ws" ws-connect="ws://localhost:8069"
             div id="riven-table" class="row" {
             }
         }
-        div id="edit_screen";
     };
     rq.respond(tiny_http::Response::from_string(pagecontent.into_string()).with_header(tiny_http::Header {
         field: "Content-Type".parse().unwrap(),
@@ -120,31 +119,59 @@ pub fn uri_home(rq: Request) -> io::Result<()> {
     }))
 }
 
-pub fn uri_edit(rq: Request, edit_toggle: &mut bool) -> io::Result<()> {
-    let pagecontent = if !*edit_toggle {
-        *edit_toggle = true;
-        html! {
-            div id="edit_screen" style="display: block;" {
-                div class="row_overlay" {
-                    div id="edit_screen_gui" {
-                        div style="flex-grow: 1;" {
-                            div class="celltitle" {
-                                "Edit Riven"
+pub fn uri_edit_cancel(rq: Request) -> io::Result<()> {
+    rq.respond(Response::empty(200))
+}
+
+pub fn uri_edit_open(rq: Request) -> io::Result<()> {
+    let title = format!("Edit <RIVENNAME>");
+    let pagecontent = html! {
+        div id="edit_screen" style="display: block;" {
+            div class="row_overlay" {
+                div id="edit_screen_gui" {
+                    div style="flex-grow: 1;" {
+                        div class="celltitle" {
+                            (title)
+                        }
+                        hr {}
+                        div {
+                            label for="price-input" style="padding-right: 13px; padding-left: 13px;" {"Price"}
+                            input
+                                id="price-input"
+                                style="font-size: 0.8em;"
+                                type="number"
+                                min="1"
+                                max="100000"
+                                name="price";
+                        }
+                        div style="display: flex; flex-wrap: wrap; padding-top: 15px" {
+                            label for="visible-toggle" style="padding-right: 13px; padding-left: 13px;" {"Visible"}
+                            label class="switch" {
+                                input
+                                    id="visible-toggle"
+                                    type="checkbox"
+                                    checked
+                                    name="visible";
+                                span class="slider";
                             }
-                            hr {}
                         }
-                        div style="padding-bottom: 13px;" {
-                            button class="cellbutton" hx-post="/edit" hx-target="#edit_screen" hx-swap="outerHTML" {"Save"}
-                            button class="cellbutton" hx-post="/edit" hx-target="#edit_screen" hx-swap="outerHTML" {"Cancel"}
+                        div style="display: flex; flex-direction: column;" {
+                            textarea
+                                type="text"
+                                name="description"
+                                placeholder="Description (Optional)"
+                                rows="4"
+                                resize="none"
+                                maxlength="200" {""}
                         }
+                    }
+                    div style="padding-bottom: 13px;" {
+                        button class="cellbutton" hx-delete="/edit_cancel" style="background-color: #7bdaff;" hx-target="#edit_screen" hx-swap="outerHTML" {"Save"}
+                        button class="cellbutton" hx-delete="/edit_cancel" hx-target="#edit_screen" hx-swap="outerHTML" {"Cancel"}
+                        button class="cellbutton" style="float: right; margin-right: 13px" {"Blacklist"}
                     }
                 }
             }
-        }
-    } else {
-        *edit_toggle = false;
-        html! {
-            div id="edit_screen" style="display: none;";
         }
     };
     rq.respond(tiny_http::Response::from_string(pagecontent.into_string()).with_header(tiny_http::Header {

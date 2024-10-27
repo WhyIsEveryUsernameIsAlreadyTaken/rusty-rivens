@@ -8,7 +8,7 @@ use tiny_http::Request;
 
 use crate::{
     api_operations::{uri_api_delete_riven, uri_api_login}, http_client::{auth_state::AuthState, wfm_client::WFMClient}, pages::{
-        home::{uri_edit, uri_home, uri_main, uri_not_found, uri_unauthorized},
+        home::{uri_edit_cancel, uri_edit_open, uri_home, uri_main, uri_not_found, uri_unauthorized},
         login::uri_login,
     }, resources::{uri_htmx, uri_logo, uri_styles, uri_wfmlogo}, rivens::inventory::database::InventoryDB, websocket::start_websocket, AppError, STOPPED
 };
@@ -157,7 +157,9 @@ fn handle_request(
         "home" => {
             uri_home(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
         }
-        "edit" => uri_edit(rq, edit_toggle)
+        "edit" => uri_edit_open(rq)
+            .map_err(|e| AppError::new(e.to_string(), "handle_request".to_string())),
+        "edit_cancel" => uri_edit_cancel(rq)
             .map_err(|e| AppError::new(e.to_string(), "handle_request".to_string())),
         "logo.svg" => {
             uri_logo(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
