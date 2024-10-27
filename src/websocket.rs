@@ -54,7 +54,7 @@ pub fn init_rivens() -> PreEscaped<String> {
                 }
                 div class="cellfooterdiv" {
                     div style="float: left;" {
-                        button class="cellbutton" hx-post="/edit" hx-target="#edit_screen" hx-swap="outerHTML" {"Edit"}
+                        button class="cellbutton" hx-post="/edit" hx-target="#screen" hx-swap="beforeend" {"Edit"}
                         button class="cellbutton" hx-delete=(uri) hx-oob-swap=(target) style="background-color: #ff4444;" {"Delete"}
                     }
                     // img src="/wfm_favicon.ico" style="float: right; margin-left: 23px; padding-right: 13px;";
@@ -110,8 +110,16 @@ pub async fn start_websocket() {
         //if let Some(mut v) = current_conn.take() { // close the last connection
         //    v.close();
         //};
-        let wsoc_connection = tungstenite::accept(stream).expect("this should accept");
-        let mut conn = WsocHandle::new(wsoc_connection);
+        let mut wsoc_connection = tungstenite::accept(stream).expect("this should accept");
         println!("handshake complete");
+        let rivens = init_rivens();
+        let msg = html! {
+            div id="riven-table" class="row" hx-swap-oob="beforeend" {
+                (rivens)
+            }
+        };
+        wsoc_connection.send(msg.into_string().into()).unwrap();
+        wsoc_connection.close(None).expect("should be closed");
+        // let mut conn = WsocHandle::new(wsoc_connection);
     }
 }

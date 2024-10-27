@@ -1,11 +1,8 @@
 use ascii::AsciiString;
 use maud::{html, PreEscaped, DOCTYPE};
-use serde_json::from_str;
-use std::{io::{self}, ops::Deref, sync::Arc};
 use tiny_http::{Request, Response, StatusCode};
 use tokio::sync::Mutex;
 use std::{io::{self}, ops::{Deref, DerefMut}, sync::Arc};
-use tiny_http::{Request, StatusCode};
 
 use crate::{block_in_place, http_client::wfm_client::WFMClient, rivens::inventory::convert_raw_inventory::{Item, Units}, AppError};
 
@@ -62,67 +59,6 @@ pub fn uri_main(rq: Request, wfm: Arc<Mutex<WFMClient>>, logged_in: &mut Option<
     })).map_err(|e| AppError::new(e.to_string(), "uri_main".to_string()))
 }
 
-<<<<<<< HEAD
-pub fn rivens() -> PreEscaped<String> {
-    let rivens_data = include_str!("../../rivenData.json");
-    let mut rivens: Vec<Item> = from_str(rivens_data).unwrap();
-    rivens.sort_by(|a, b| a.attributes.len().cmp(&b.attributes.len()));
-    let pagecontent = rivens.iter().fold(PreEscaped::default(),|acc, riven| {
-        let title = format!("{} {}", riven.weapon_name, riven.name);
-        let stats = riven.attributes.iter().fold(PreEscaped::default(), |acc, attr|{
-            let stat = match attr.units {
-                Units::Percent => {
-                    if attr.positive {
-                        format!("+{}% {}", attr.value, attr.short_string)
-                    } else {
-                        format!("-{}% {}", attr.value, attr.short_string)
-                    }
-                },
-                Units::Multiply => format!("x{} {}", attr.value, attr.short_string),
-                Units::Seconds => {
-                    if attr.positive {
-                        format!("+{}s {}", attr.value, attr.short_string)
-                    } else {
-                        format!("-{}s {}", attr.value, attr.short_string)
-                    }
-                },
-                Units::Null => format!("{} {}", attr.value, attr.short_string),
-            };
-            html! {
-                (acc)
-                p style="text-align: center; margin: 10px;"{(stat)}
-            }
-        });
-        let oid = riven.oid.clone();
-        let id = format!("a{oid}");
-        let uri = format!("/api/delete_riven/{oid}");
-
-        // let height = format!("height: calc(126px + (2.2em * {}));", riven.attributes.len());
-        html! {
-            (acc)
-            div class="cell" id=(oid) {
-                div class="celltitle" {
-                    (title)
-                }
-                hr style="width: 100%";
-                div style="flex-grow: 1"{
-                    (stats)
-                }
-                div class="cellfooterdiv" {
-                    div style="float: left;" {
-                        button class="cellbutton" hx-post="/edit" hx-target="#screen" hx-swap="beforeend" {"Edit"}
-                        button class="cellbutton" hx-delete=(uri) hx-target="closest .cell" hx-swap="outerHTML" style="background-color: #ff4444;" {"Delete"}
-                    }
-                    // img src="/wfm_favicon.ico" style="float: right; margin-left: 23px; padding-right: 13px;";
-                }
-            }
-        }
-    });
-    pagecontent
-}
-
-=======
->>>>>>> c9cb513 (feat: better units, fixed deadlocks?)
 pub fn uri_home(rq: Request) -> io::Result<()> {
     let pagecontent = html! {
     div id="screen" style="justify-content: center;" {
