@@ -124,7 +124,7 @@ impl Ord for AttributeInfo {
     }
 }
 
-pub async fn convert_inventory_data(
+pub fn convert_inventory_data(
     lookup: &RivenDataLookup,
     upgrades: Vec<Upgrades>,
 ) -> Vec<Item> {
@@ -255,9 +255,7 @@ fn calculate_attributes(
             Units::Multiply => (value + 100.0).round() / 100.0,
             _ => (value * 10.0).round() / 10.0,
         };
-        println!("old: {}", attr.short_string);
         let (_, short_string) = attr.short_string.split_once('>').unwrap_or(("", attr.short_string.deref()));
-        println!("new: {}", short_string);
         attributes.push(Attribute {
             value,
             positive: attr.positive,
@@ -627,16 +625,16 @@ mod tests {
     use dotenv::dotenv;
     use serde_json::to_value;
 
-    use crate::{block_in_place, rivens::inventory::{raw_inventory::decrypt_last_data, riven_lookop::RivenDataLookup}};
+    use crate::rivens::inventory::{raw_inventory::decrypt_last_data, riven_lookop::RivenDataLookup};
 
     use super::convert_inventory_data;
 
-    #[test]
-    fn test_convert_inventory_data() {
+    #[tokio::test]
+    async fn test_convert_inventory_data() {
         dotenv().unwrap();
-        let lookup = RivenDataLookup::setup().unwrap();
+        let lookup = RivenDataLookup::setup().await.unwrap();
         let raw_upgrades = decrypt_last_data(None).unwrap();
-        let items = block_in_place!(async move {convert_inventory_data(&lookup, raw_upgrades).await});
+        let items = convert_inventory_data(&lookup, raw_upgrades);
         let out = to_value(items).unwrap();
         let mut file = File::create("rivenData.json").unwrap();
         file.write_all(out.to_string().as_bytes()).unwrap();

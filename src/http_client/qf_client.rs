@@ -1,12 +1,11 @@
 use std::{ops::{Deref, DerefMut}, sync::Arc, time::Duration};
 
-use once_cell::sync::OnceCell;
 use serde_json::json;
 use tokio::sync::Mutex;
 
 use crate::{block_in_place, AppError};
 
-use super::{auth_state::AuthState, client::{ApiResult, ArcClientHandle, ClientHandle, HttpClient, Request, RequestBuilder, Response}};
+use super::{auth_state::AuthState, client::{ArcClientHandle, ClientHandle, HttpClient, Request, RequestBuilder, Response}};
 
 #[derive(Clone, Debug)]
 pub struct QFClient {
@@ -17,23 +16,24 @@ pub struct QFClient {
 
 impl<'a> HttpClient<'a> for QFClient {
     async fn sender_fn(&mut self, rq: super::client::RequestBuilder) -> Result<(ArcClientHandle, tokio::sync::mpsc::Receiver<super::client::Response>, super::client::RequestBuilder), AppError> {
-        let auth = self.auth.lock().await;
-        let auth = auth.deref();
+        let auth_mutex = self.auth.lock().await;
+        let auth = auth_mutex.deref();
         let rq = if !auth.qf_access_token.is_empty() {
             rq
                 .header(format!("Authorization: JWT {}", auth.qf_access_token).parse().expect("infallible"))
         } else {
             rq
         };
+        drop(auth_mutex);
         let (request_sender, request_receiver) = tokio::sync::mpsc::channel::<Request>(1);
         let (respones_sender, response_receiver) = tokio::sync::mpsc::channel::<Response>(1);
         let client_handle = ClientHandle::new()
-                .port(443)
-                .addr("https://api.quantframe.app/")
-                .map_err(|e| AppError::new(e.to_string(), "send_request".to_string()))?
-                .timeout(Duration::from_secs(5))
-                .send_channel(request_sender)
-                .start_client(request_receiver, respones_sender);
+            .port(443)
+            .addr("https://api.quantframe.app/")
+            .map_err(|e| AppError::new(e.to_string(), "send_request".to_string()))?
+            .timeout(Duration::from_secs(5))
+            .send_channel(request_sender)
+            .start_client(request_receiver, respones_sender);
         let client_handle = Arc::new(Mutex::new(client_handle));
         self.client_handle = Some(client_handle.clone());
         Ok((client_handle, response_receiver, rq))

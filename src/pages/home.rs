@@ -62,6 +62,7 @@ pub fn uri_main(rq: Request, wfm: Arc<Mutex<WFMClient>>, logged_in: &mut Option<
     })).map_err(|e| AppError::new(e.to_string(), "uri_main".to_string()))
 }
 
+<<<<<<< HEAD
 pub fn rivens() -> PreEscaped<String> {
     let rivens_data = include_str!("../../rivenData.json");
     let mut rivens: Vec<Item> = from_str(rivens_data).unwrap();
@@ -120,6 +121,8 @@ pub fn rivens() -> PreEscaped<String> {
     pagecontent
 }
 
+=======
+>>>>>>> c9cb513 (feat: better units, fixed deadlocks?)
 pub fn uri_home(rq: Request) -> io::Result<()> {
     let pagecontent = html! {
     div id="screen" style="justify-content: center;" {

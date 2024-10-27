@@ -58,7 +58,7 @@ pub async fn sync_db(
 
     // ADD NEW ITEMS TO DB
 
-    let new_items = convert_inventory_data(lookup, new_items).await;
+    let new_items = convert_inventory_data(lookup, new_items);
     db.insert_items(&new_items).unwrap();
     // PUSH CHANGES UP TO UI
 

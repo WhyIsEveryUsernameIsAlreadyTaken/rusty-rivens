@@ -1,4 +1,5 @@
 use ascii::AsciiString;
+use dotenv::dotenv;
 use once_cell::sync::OnceCell;
 use tokio::sync::Mutex;
 use std::{
@@ -10,7 +11,7 @@ use crate::{
     api_operations::{uri_api_delete_riven, uri_api_login}, http_client::{auth_state::AuthState, qf_client::QFClient, wfm_client::WFMClient}, pages::{
         home::{uri_edit_cancel, uri_edit_open, uri_home, uri_main, uri_not_found, uri_unauthorized},
         login::uri_login,
-    }, resources::{uri_htmx, uri_logo, uri_styles, uri_wfmlogo}, rivens::inventory::database::InventoryDB, websocket::start_websocket, AppError, STOPPED
+    }, resources::{uri_htmx, uri_logo, uri_styles, uri_wfmlogo}, rivens::inventory::{database::InventoryDB, riven_lookop::RivenDataLookup}, websocket::start_websocket, AppError, STOPPED
 };
 
 #[derive(Debug)]
@@ -34,6 +35,7 @@ impl LastModified {
 
 #[tokio::main]
 pub async fn start_server() -> Result<(), AppError> {
+    dotenv().expect("bleh");
     let s = tiny_http::Server::http("127.0.0.1:8000").unwrap();
     let mut edit_toggle = false;
     let mut logged_in: Option<bool> = None;
@@ -48,7 +50,7 @@ pub async fn start_server() -> Result<(), AppError> {
     let wfm_client = WFMClient::new(auth_state.clone());
     let wfm_client = Arc::new(Mutex::new(wfm_client));
 
-    let qf_client = QFClient::new(auth_state);
+    let qf_client = QFClient::new(auth_state.clone());
     let qf_client = Arc::new(Mutex::new(qf_client));
 
     let rq = s.recv().unwrap();
@@ -77,7 +79,9 @@ pub async fn start_server() -> Result<(), AppError> {
         .map_err(|e| AppError::new(e.to_string(), "start_server: InventoryDB::open".to_string()))?;
 
     let db = Arc::new(Mutex::new(db));
-    // let lookup = Arc::new(RivenDataLookup::setup().unwrap());
+    let lookup = Arc::new(RivenDataLookup::setup().await.expect(
+        "FATAL: Could not retrieve riven lookup data"
+    ));
     let websocket = thread::spawn(|| start_websocket());
 
     let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();

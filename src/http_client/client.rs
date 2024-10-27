@@ -4,7 +4,7 @@ use std::{
 };
 
 use serde_json::Value;
-use tokio::{io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader}, net::TcpStream, sync::{mpsc::{error::{SendError as SError, TryRecvError}, Receiver, Sender}, Mutex}, task::JoinHandle};
+use tokio::{io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader}, net::TcpStream, sync::{mpsc::{error::{RecvError, SendError as SError, TryRecvError}, Receiver, Sender}, Mutex}, task::JoinHandle};
 use tokio_rustls::{client::TlsStream, rustls::RootCertStore};
 
 use crate::{AppError, STOPPED};
@@ -85,6 +85,7 @@ impl fmt::Display for StatusError {
     }
 }
 
+#[derive(Debug)]
 pub enum Method {
     OPTIONS,
     GET,
@@ -129,6 +130,7 @@ impl Clone for Method {
     }
 }
 
+#[derive(Debug, Clone)]
 pub struct Request {
     method: Option<Method>,
     uri: Option<Arc<str>>,
@@ -358,7 +360,7 @@ fn build_response(out: &str) -> Result<Response, SendError> {
     })
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Response {
     status: StatusCode,
     headers: Headers,
@@ -411,7 +413,7 @@ impl Display for HeaderInsertError {
 impl std::error::Error for HeaderInsertError {}
 
 #[derive(Debug)]
-enum SendError {
+pub enum SendError {
     SenderNone,
     UriNone,
     MethodNone,
@@ -440,7 +442,7 @@ impl Display for SendError {
             SendError::HttpNotSupported(v) => {
                 f.write_str(format!("Http addresses not supported: {v}").as_str())
             }
-            SendError::Recv => f.write_str("RecvError: Channel closed"),
+            SendError::Recv => f.write_str(format!("RecvError: ").as_str()),
             SendError::TryRecv(e) => {
                 f.write_str(format!("TryRecvError: {}", e.to_string()).as_str())
             }
@@ -636,7 +638,9 @@ impl ClientHandle {
             .await
             .map_err(|e| SendError::ChanSendError(e))?;
         let res = match receiver.recv().await {
-            Some(v) => v,
+            Some(v) => {
+                v
+            },
             None => return Err(SendError::Recv),
         };
         Ok(res)
@@ -717,11 +721,12 @@ async fn handle(
             continue;
         };
         let resp = match request.send(&mut tstream).await {
-            Ok(v) => v,
+            Ok(v) => {
+                v
+            },
             Err(e) => match &e {
                 SendError::IoError(ie) => match ie.kind() {
                     ErrorKind::WriteZero => {
-                        drop(tstream);
                         println!("Connection Closed for {addr}");
                         println!("Reconnecting to {addr}");
                         tstream = connect(&inner).await.unwrap();
@@ -735,11 +740,8 @@ async fn handle(
                 _ => panic!("{e}"),
             }?,
         };
-        sender
-            .send(resp)
-            .await
-            .map_err(|e| ConnectionError::ChanSendError(e))
-            .unwrap();
+        sender.send(resp).await.expect("hello?");
+        println!("sent response through channel");
     }
 }
 
@@ -784,8 +786,8 @@ pub trait HttpClient<'a> {
 
         let start = SystemTime::now();
 
-        let client_handle = client_handle.lock().await;
-        let client_handle = client_handle.deref();
+        let client_handle_mutex = client_handle.lock().await;
+        let client_handle = client_handle_mutex.deref();
         let method = match rq.method.clone() {
             Some(v) => {
                 v.to_string()
@@ -800,6 +802,7 @@ pub trait HttpClient<'a> {
             .send(rq, &mut response_receiver)
             .await
             .map_err(|e| AppError::new(e.to_string(), "send_request".into()))?;
+        drop(client_handle_mutex);
 
         let status = response.status();
         println!(

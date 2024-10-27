@@ -39,7 +39,6 @@ pub fn uri_api_login(
         qf.login(id, check_code, ingame_name).await
     }).map_err(|e| e.prop("uri_login_req".into()))?;
 
-
     // for testing
     let authorized = status.code == 200;
 
