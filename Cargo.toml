@@ -6,14 +6,8 @@ edition = "2021"
 [dependencies]
 aes = "0.8.4"
 ascii = "1.1.0"
-async-channel = { version = "2.3.1", default-features = false }
-async-lock = { version = "3.4.0", default-features = false }
-async-native-tls = "0.5.0"
-async-net = { version = "2.0.0", default-features = false }
-async-task = { version = "4.7.1", default-features = false }
 cbc = { version = "0.1.2", features = ["std"] }
 dotenv = { version = "0.15.0", default-features = false }
-futures-lite = { version = "2.3.0", default-features = false }
 jsonwebtoken = { version = "9.3.0", default-features = false }
 maud = "0.26.0"
 md5 = "0.7.0"
@@ -24,12 +18,13 @@ rusqlite = { version = "0.32.1", default-features = false, features = ["time"] }
 serde = { version = "1.0.209", features = ["derive", "rc"] }
 serde_json = "1.0.127"
 serde_urlencoded = "0.7.1"
-smol-timeout = "0.6.0"
-smolscale = { version = "0.4.11", default-features = false }
 tao = "0.30.2"
 time = { version = "0.3.36", default-features = false, features = ["macros", "serde", "serde-well-known", "std"] }
 tiny_http = "0.12.0"
+tokio = { version = "1.41.0", default-features = false, features = ["io-util", "macros", "net", "rt", "rt-multi-thread", "sync", "time", "tokio-macros"] }
+tokio-rustls = { version = "0.26.0", default-features = false, features = ["ring"] }
 tungstenite = "0.24.0"
+webpki-roots = "0.26.6"
 wry = { version = "0.45.0", features = ["devtools", "linux-body"] }
 
 [dev-dependencies]

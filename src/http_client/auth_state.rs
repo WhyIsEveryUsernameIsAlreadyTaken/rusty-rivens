@@ -11,16 +11,22 @@ use crate::AppError;
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AuthState {
     pub ingame_name: Arc<str>,
-    pub access_token: Arc<str>,
-    pub id: String,
+    #[serde(default)]
+    pub wfm_access_token: Arc<str>,
+    #[serde(default)]
+    pub qf_access_token: Arc<str>,
+    pub check_code: Arc<str>,
+    pub id: Arc<str>,
 }
 
 impl Default for AuthState {
     fn default() -> Self {
         Self {
-            id: String::new(),
-            access_token: "".into(),
+            id: "".into(),
+            wfm_access_token: "".into(),
+            check_code: "".into(),
             ingame_name: "".into(),
+            qf_access_token: "".into(),
         }
     }
 }
@@ -69,6 +75,7 @@ impl AuthState {
     pub fn set(&mut self, new_auth: AuthState) {
         self.id = new_auth.id;
         self.ingame_name = new_auth.ingame_name;
-        self.access_token = new_auth.access_token;
+        self.wfm_access_token = new_auth.wfm_access_token;
+        self.check_code = new_auth.check_code;
     }
 }

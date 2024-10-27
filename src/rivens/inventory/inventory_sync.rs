@@ -1,6 +1,6 @@
 use std::{ops::DerefMut, sync::Arc};
 
-use async_lock::Mutex;
+use tokio::sync::Mutex;
 
 use super::{
     convert_raw_inventory::{convert_inventory_data, Item, Upgrades},
@@ -69,11 +69,11 @@ pub async fn sync_db(
 mod tests {
     use std::sync::Arc;
 
-    use async_lock::Mutex;
     use dotenv::dotenv;
     use serde_json::{from_str, Value};
+    use tokio::sync::Mutex;
 
-    use crate::rivens::inventory::{database, raw_inventory::decrypt_last_data, riven_lookop::RivenDataLookup};
+    use crate::{block_in_place, rivens::inventory::{database, raw_inventory::decrypt_last_data, riven_lookop::RivenDataLookup}};
 
     use super::sync_db;
 
@@ -93,7 +93,7 @@ mod tests {
         let db = database::InventoryDB::open("test_db.sqlite3").unwrap();
         let db = Arc::new(Mutex::new(db));
 
-        let (init, _, same) = smolscale::block_on( {
+        let (init, _, same) = block_in_place!( {
             let db = db.clone();
             let lookup = lookup.clone();
             async move {
@@ -102,7 +102,7 @@ mod tests {
         });
         assert_eq!(same, 0, "same itms: {same}");
 
-        let (added, removed, same) = smolscale::block_on( {
+        let (added, removed, same) = block_in_place!( {
             let db = db.clone();
             let lookup = lookup.clone();
             async move {
@@ -113,7 +113,7 @@ mod tests {
         assert_eq!(added, 1, "{added} added");
         assert_eq!(removed, 0, "{removed}");
 
-        let (added, removed, kept) = smolscale::block_on( {
+        let (added, removed, kept) = block_in_place!( {
             let db = db.clone();
             let lookup = lookup.clone();
             async move {

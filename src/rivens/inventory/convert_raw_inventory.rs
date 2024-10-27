@@ -627,7 +627,7 @@ mod tests {
     use dotenv::dotenv;
     use serde_json::to_value;
 
-    use crate::rivens::inventory::{raw_inventory::decrypt_last_data, riven_lookop::RivenDataLookup};
+    use crate::{block_in_place, rivens::inventory::{raw_inventory::decrypt_last_data, riven_lookop::RivenDataLookup}};
 
     use super::convert_inventory_data;
 
@@ -636,7 +636,7 @@ mod tests {
         dotenv().unwrap();
         let lookup = RivenDataLookup::setup().unwrap();
         let raw_upgrades = decrypt_last_data(None).unwrap();
-        let items = smolscale::block_on(async move {convert_inventory_data(&lookup, raw_upgrades).await});
+        let items = block_in_place!(async move {convert_inventory_data(&lookup, raw_upgrades).await});
         let out = to_value(items).unwrap();
         let mut file = File::create("rivenData.json").unwrap();
         file.write_all(out.to_string().as_bytes()).unwrap();

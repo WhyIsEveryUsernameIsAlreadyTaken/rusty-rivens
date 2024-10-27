@@ -1,43 +1,103 @@
-use once_cell::sync::OnceCell;
+use std::{ops::{Deref, DerefMut}, sync::Arc, time::Duration};
 
-use super::client::HttpClient;
+use once_cell::sync::OnceCell;
+use serde_json::json;
+use tokio::sync::Mutex;
+
+use crate::{block_in_place, AppError};
+
+use super::{auth_state::AuthState, client::{ApiResult, ArcClientHandle, ClientHandle, HttpClient, Request, RequestBuilder, Response}};
 
 #[derive(Clone, Debug)]
 pub struct QFClient {
     pub endpoint: String,
+    auth: Arc<Mutex<AuthState>>,
+    client_handle: Option<ArcClientHandle>
 }
 
-impl<'a> HttpClient<'a> for QFClient {}
+impl<'a> HttpClient<'a> for QFClient {
+    async fn sender_fn(&mut self, rq: super::client::RequestBuilder) -> Result<(ArcClientHandle, tokio::sync::mpsc::Receiver<super::client::Response>, super::client::RequestBuilder), AppError> {
+        let auth = self.auth.lock().await;
+        let auth = auth.deref();
+        let rq = if !auth.qf_access_token.is_empty() {
+            rq
+                .header(format!("Authorization: JWT {}", auth.qf_access_token).parse().expect("infallible"))
+        } else {
+            rq
+        };
+        let (request_sender, request_receiver) = tokio::sync::mpsc::channel::<Request>(1);
+        let (respones_sender, response_receiver) = tokio::sync::mpsc::channel::<Response>(1);
+        let client_handle = ClientHandle::new()
+                .port(443)
+                .addr("https://api.quantframe.app/")
+                .map_err(|e| AppError::new(e.to_string(), "send_request".to_string()))?
+                .timeout(Duration::from_secs(5))
+                .send_channel(request_sender)
+                .start_client(request_receiver, respones_sender);
+        let client_handle = Arc::new(Mutex::new(client_handle));
+        self.client_handle = Some(client_handle.clone());
+        Ok((client_handle, response_receiver, rq))
+    }
 
-impl QFClient {
-    pub fn new() -> Self {
-        Self {
-            endpoint: String::from("https://api.quantframe.app/items/riven/raw"),
-        }
+    async fn rate_limit(&self) {
     }
 }
 
-pub static TEST_QF_STOPPED: OnceCell<bool> = once_cell::sync::OnceCell::new();
+impl QFClient {
+    pub fn new(auth: Arc<Mutex<AuthState>>) -> Self {
+        Self {
+            endpoint: String::from("https://api.quantframe.app/"),
+            auth,
+            client_handle: None,
+        }
+    }
+    pub async fn login(&mut self, id: Arc<str>, check_code: Arc<str>, ingame_name: Arc<str>) -> Result<(), AppError> {
+        let req = RequestBuilder::new()
+            .method(super::client::Method::POST)
+            .uri(format!("{}auth/login", self.endpoint).as_str())
+            .header("Device: thingamajig".parse().unwrap())
+            .header("Content-Type: application/json".parse().unwrap())
+            .header("Accept: */*".parse().unwrap())
+            .body(json!({
+                "username": id,
+                "password": check_code,
+                "current_version": "1.2.5",
+                "ingame_name": ingame_name
+            })).build();
+        let res = block_in_place!(async { self.send_request(req).await })
+            .map_err(|e| e.prop("login".into()))?;
+        let value = res.res.0.expect("body should be some")["token"].clone();
+        let token = value.as_str().expect("token should be a string");
+        let mut auth = self.auth.lock().await;
+        let auth = auth.deref_mut();
+        auth.qf_access_token = token.into();
+        auth.update().map_err(|e| e.prop("login".into()))?;
+        Ok(())
+    }
+}
 
 #[cfg(test)]
 mod tests {
 
-    use crate::http_client::client::{HttpClient, Method};
+    use std::sync::Arc;
 
-    use super::{QFClient, TEST_QF_STOPPED};
+    use tokio::sync::Mutex;
+
+    use crate::{block_in_place, http_client::{auth_state::AuthState, client::{HttpClient, Method, RequestBuilder}}};
+
+    use super::QFClient;
 
     #[test]
     fn test_qfclient() {
-        let client = QFClient::new();
-        let _ = smolscale::block_on(async move {
-            client.send_request(
-                Method::GET,
-                client.endpoint.as_str(),
-                &mut None,
-                None,
-                None
-            ).await
+        let auth = AuthState::setup().unwrap();
+        let auth = Arc::new(Mutex::new(auth));
+        let mut client = QFClient::new(auth);
+        let _ = block_in_place!(async move {
+            let req = RequestBuilder::new()
+                .method(Method::GET)
+                .uri(client.endpoint.as_str())
+                .build();
+            client.send_request(req).await
         });
-        TEST_QF_STOPPED.set(true).unwrap();
     }
 }

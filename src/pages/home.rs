@@ -1,12 +1,13 @@
 use ascii::AsciiString;
-use async_lock::Mutex;
 use maud::{html, PreEscaped, DOCTYPE};
 use serde_json::from_str;
 use std::{io::{self}, ops::Deref, sync::Arc};
 use tiny_http::{Request, Response, StatusCode};
+use tokio::sync::Mutex;
+use std::{io::{self}, ops::{Deref, DerefMut}, sync::Arc};
+use tiny_http::{Request, StatusCode};
 
-use crate::{http_client::wfm_client::WFMClient, rivens::inventory::convert_raw_inventory::{Item, Units}, AppError};
-
+use crate::{block_in_place, http_client::wfm_client::WFMClient, rivens::inventory::convert_raw_inventory::{Item, Units}, AppError};
 
 pub fn uri_main(rq: Request, wfm: Arc<Mutex<WFMClient>>, logged_in: &mut Option<bool>) -> Result<(), AppError> {
     let pagecontent = if logged_in.is_some() {
@@ -22,9 +23,9 @@ pub fn uri_main(rq: Request, wfm: Arc<Mutex<WFMClient>>, logged_in: &mut Option<
             }
         }
     } else {
-        let valid = smolscale::block_on(async move {
-            let wfm = wfm.lock().await;
-            let wfm = wfm.deref();
+        let valid = block_in_place!(async move {
+            let mut wfm = wfm.lock().await;
+            let wfm = wfm.deref_mut();
             wfm.validate().await
         }).map_err(|e| e.prop("uri_main".into()))?;
         if valid {

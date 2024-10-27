@@ -1,51 +1,75 @@
 use std::{
-    ops::DerefMut, sync::Arc, thread::JoinHandle, time::Duration
+    ops::{Deref, DerefMut}, sync::Arc, time::Duration
 };
 
-use async_lock::Mutex;
 use once_cell::sync::OnceCell;
+use tokio::sync::{mpsc::Receiver, Mutex};
 
 use crate::{jwt::jwt_is_valid, rate_limiter::RateLimiter, AppError};
 
 use super::{
     auth_state::AuthState,
-    client::{HttpClient, Method, StatusCode},
+    client::{ClientHandle, HttpClient, Method, Request, RequestBuilder, Response, StatusCode},
 };
+
+type ArcClientHandle = Arc<Mutex<ClientHandle>>;
 
 #[derive(Debug)]
 pub struct WFMClient {
     endpoint: String,
-    limiter: Arc<Mutex<Option<RateLimiter>>>,
-    auth: AuthState,
-    http_client: Option<JoinHandle<()>>
+    limiter: Arc<Mutex<RateLimiter>>,
+    auth: Arc<Mutex<AuthState>>,
+    client_handle: Option<ArcClientHandle>
 }
 
-impl<'a> HttpClient<'a> for WFMClient {}
+impl<'a> HttpClient<'a> for WFMClient {
+    async fn sender_fn(&mut self, rq: RequestBuilder) -> Result<(ArcClientHandle, Receiver<Response>, RequestBuilder), AppError> {
+        let mut limiter = self.limiter.lock().await;
+        let limiter = limiter.deref_mut();
+        limiter.wait_for_token().await;
+        let auth = self.auth.lock().await; // WHY DEADLOCK ?????????????????????????????????????
+        let auth = auth.deref();
+        let rq = rq
+            .header(format!("Authorization: JWT {}", auth.wfm_access_token).parse().expect("infallible"));
+        let (request_sender, request_receiver) = tokio::sync::mpsc::channel::<Request>(1);
+        let (respones_sender, response_receiver) = tokio::sync::mpsc::channel::<Response>(1);
+        let client_handle = ClientHandle::new()
+                .port(443)
+                .addr("https://api.warframe.market/")
+                .map_err(|e| AppError::new(e.to_string(), "send_request".to_string()))?
+                .timeout(Duration::from_secs(5))
+                .send_channel(request_sender)
+                .start_client(request_receiver, respones_sender);
+        let client_handle = Arc::new(Mutex::new(client_handle));
+        self.client_handle = Some(client_handle.clone());
+        Ok((client_handle, response_receiver, rq))
+    }
+
+    async fn rate_limit(&self) {
+        let mut limiter = self.limiter.lock().await;
+        let limiter = limiter.deref_mut();
+        limiter.add_delay(1.0);
+    }
+}
 
 impl WFMClient {
-    pub fn new(auth: AuthState) -> Self {
+    pub fn new(auth: Arc<Mutex<AuthState>>) -> Self {
         WFMClient {
             endpoint: String::from("https://api.warframe.market/v1"),
-            limiter: Arc::new(Mutex::new(Some(RateLimiter::new(1.0, Duration::new(1, 0))))),
+            limiter: Arc::new(Mutex::new(RateLimiter::new(1.0, Duration::new(1, 0)))),
             auth,
-            http_client: None,
+            client_handle: None,
         }
     }
 
-    pub async fn login(&mut self, email: &str, password: &str) -> Result<StatusCode, AppError> {
+    pub async fn login(&mut self, email: &str, password: &str) -> Result<(StatusCode, Arc<str>, Arc<str>, Arc<str>), AppError> {
         let body = serde_json::json!({"email": email, "password": password});
-        let mut rate_limiter = self.limiter.lock().await;
-        let rate_limiter = rate_limiter.deref_mut();
+        let req = RequestBuilder::new()
+            .method(Method::POST)
+            .uri(&format!("{}{}", self.endpoint, "/auth/signin"))
+            .body(body);
         let response = match self
-            .send_request(
-                Method::POST,
-                &format!("{}{}", self.endpoint, "/auth/signin"),
-                rate_limiter,
-                None,
-                Some(body),
-            )
-            .await
-        {
+            .send_request(req.build()).await {
             Ok(v) => v,
             Err(e) => return Err(AppError::new(e.to_string(), String::from("login: "))),
         };
@@ -59,44 +83,46 @@ impl WFMClient {
         };
         let mut user = AuthState::default();
         if response.status.code < 300 {
-            if let Some(_) = val {
-                // let data = v["payload"]["user"].clone();
-                // let data = data.to_string();
-                // println!("{data}");
-                // user = serde_json::from_str(data.as_str()).map_err(|e| {
-                //     AppError::new(
-                //         e.to_string(),
-                //         String::from("login: from_str"),
-                //     )
-                // })?;
-                user.access_token = token;
+            if let Some(v) = val {
+                let data = v["payload"]["user"].clone();
+                let data = data.to_string();
+                user = serde_json::from_str(data.as_str()).map_err(|e| {
+                    AppError::new(
+                        e.to_string(),
+                        String::from("login: from_str"),
+                    )
+                })?;
+                user.wfm_access_token = token;
                 user.update().map_err(|e| e.prop("login: ".into()))?;
             }
         }
-        self.auth.set(user);
-        Ok(response.status)
+        let mut auth = self.auth.lock().await;
+        let auth = auth.deref_mut();
+        auth.set(user);
+        Ok((response.status, auth.id.clone(), auth.check_code.clone(), auth.ingame_name.clone()))
     }
 
-    pub async fn validate(&self) -> Result<bool, AppError> {
-        let valid_jwt = if !self.auth.access_token.is_empty() {
-            jwt_is_valid(&self.auth.access_token).map_err(|e| e.prop("validate".into()))?
+    pub async fn validate(&mut self) -> Result<bool, AppError> {
+        let mutex = self.auth.clone();
+        let auth = mutex.lock().await;
+        let auth = auth.deref();
+        let valid_jwt = if !auth.wfm_access_token.is_empty() {
+            println!("jwt found, validating");
+            jwt_is_valid(auth.wfm_access_token.deref()).map_err(|e| e.prop("validate".into()))?
         } else {
             println!("WARNING: No JWT Found");
             return Ok(false);
         };
         if !valid_jwt {
+            println!("jwt not valid");
             return Ok(false);
         }
-        let mut rate_limiter = self.limiter.lock().await;
-        let rate_limiter = rate_limiter.deref_mut();
+        let req = RequestBuilder::new()
+            .method(Method::GET)
+            .uri(format!("{}/profile", self.endpoint).as_str())
+            .build();
         let res = self
-            .send_request(
-                Method::GET,
-                format!("{}/profile", self.endpoint).as_str(),
-                rate_limiter,
-                Some(self.auth.clone()),
-                None
-            ).await;
+            .send_request(req).await;
         let (body, _) = match res {
             Ok(v) => v.res,
             Err(e) => return Err(e.prop("validate".into())),
@@ -130,78 +156,32 @@ impl WFMClient {
         }
         Ok(is_valid)
     }
-
-    // pub async fn get_all_rivens(&self) -> Result<Vec<Auction>, AppError> {
-    //     let url = "/profile/auctions";
-    //     let method = Method::GET;
-
-    //     let auth = self.auth.lock().unwrap();
-    //     let auth = auth.deref();
-    //     let mut rate_limiter = self.limiter.lock().unwrap();
-    //     let rate_limiter = rate_limiter.deref_mut();
-    //     let (body_value, _) = match self
-    //         .send_request(
-    //             method.clone(),
-    //             &format!("{}{}", self.endpoint, url),
-    //             rate_limiter,
-    //             Some(auth),
-    //             None,
-    //         )
-    //         .await
-    //     {
-    //         Ok(v) => {
-    //             println!("{} {}: {}", method, url, v.status.code);
-    //             if v.status.code < 300 {
-    //                 return Err(AppError::new(
-    //                     StatusError { status: v.status }.to_string(),
-    //                     String::from("get_all_rivens: "),
-    //                 ));
-    //             }
-    //             v.res
-    //         }
-    //         Err(e) => return Err(AppError::new(e.to_string(), String::from("get_all_rivens"))),
-    //     };
-    //     match body_value {
-    //         Some(v) => {
-    //             let data = v["payload"]["auctions"].clone();
-    //             let data = data.to_string();
-    //             serde_json::from_str::<Vec<Auction>>(data.as_str()).map_err(|e| {
-    //                 AppError::new(
-    //                     e.to_string(),
-    //                     String::from("get_all_rivens: from_str::<Vec<Auction>>"),
-    //                 )
-    //             })
-    //         }
-    //         None => Err(AppError::new(
-    //             String::from("No response body associated with response"),
-    //             String::from("get_all_rivens"),
-    //         )),
-    //     }
-    // }
 }
 
 pub static TEST_WFM_STOPPED: OnceCell<bool> = once_cell::sync::OnceCell::new();
 
 #[cfg(test)]
 mod tests {
-    use std::ops::DerefMut;
 
-    use crate::http_client::{auth_state::AuthState, client::{HttpClient, Method}, wfm_client::WFMClient};
+    use std::sync::Arc;
+
+    use tokio::sync::Mutex;
+
+    use crate::{block_in_place, http_client::{auth_state::AuthState, client::{HttpClient, Method, RequestBuilder}, wfm_client::WFMClient}};
 
     use super::TEST_WFM_STOPPED;
 
     #[test]
     fn test_wfmclient() {
-        let client = WFMClient::new(AuthState::setup().unwrap());
-        let _req = smolscale::block_on( async move {
-            let mut limiter = client.limiter.lock().await;
-            client.send_request(
-                Method::GET,
-                format!("{}/profile/toopsi", client.endpoint).as_str(),
-                limiter.deref_mut(),
-                None,
-                None
-            ).await
+        let auth = AuthState::setup().unwrap();
+        let auth = Arc::new(Mutex::new(auth));
+        let mut client = WFMClient::new(auth);
+        let _req = block_in_place!(async move {
+            let req = RequestBuilder::new()
+                .method(Method::GET)
+                .uri(format!("{}/profile/toopsi", client.endpoint).as_str())
+                .build();
+            client.send_request(req).await
         });
         TEST_WFM_STOPPED.set(true).unwrap();
     }

@@ -9,6 +9,7 @@ use tao::{
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
 };
+use tokio::runtime::{Handle, Runtime};
 use wry::WebViewBuilder;
 
 mod pages;
@@ -55,7 +56,19 @@ impl AppError {
 
 impl Error for AppError {}
 
-fn main() -> wry::Result<()> {
+#[macro_export]
+macro_rules! block_in_place {
+    ($x:expr) => {
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on($x)
+        })
+    };
+}
+
+#[tokio::main]
+async fn main() -> wry::Result<()> {
+    let tokio_runtime = Runtime::new().unwrap();
+    let _ = tokio_runtime.enter();
     thread::spawn(|| start_server().unwrap());
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop).unwrap();

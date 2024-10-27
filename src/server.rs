@@ -1,13 +1,13 @@
 use ascii::AsciiString;
-use async_lock::Mutex;
 use once_cell::sync::OnceCell;
+use tokio::sync::Mutex;
 use std::{
     fs, io::{self}, sync::Arc, thread, time::SystemTime
 };
 use tiny_http::Request;
 
 use crate::{
-    api_operations::{uri_api_delete_riven, uri_api_login}, http_client::{auth_state::AuthState, wfm_client::WFMClient}, pages::{
+    api_operations::{uri_api_delete_riven, uri_api_login}, http_client::{auth_state::AuthState, qf_client::QFClient, wfm_client::WFMClient}, pages::{
         home::{uri_edit_cancel, uri_edit_open, uri_home, uri_main, uri_not_found, uri_unauthorized},
         login::uri_login,
     }, resources::{uri_htmx, uri_logo, uri_styles, uri_wfmlogo}, rivens::inventory::database::InventoryDB, websocket::start_websocket, AppError, STOPPED
@@ -32,7 +32,8 @@ impl LastModified {
     }
 }
 
-pub(crate) fn start_server() -> Result<(), AppError> {
+#[tokio::main]
+pub async fn start_server() -> Result<(), AppError> {
     let s = tiny_http::Server::http("127.0.0.1:8000").unwrap();
     let mut edit_toggle = false;
     let mut logged_in: Option<bool> = None;
@@ -42,8 +43,13 @@ pub(crate) fn start_server() -> Result<(), AppError> {
     }
 
     let auth_state = AuthState::setup().map_err(|e| e.prop("start_server".into()))?;
-    let wfm_client = WFMClient::new(auth_state);
+    let auth_state = Arc::new(Mutex::new(auth_state));
+
+    let wfm_client = WFMClient::new(auth_state.clone());
     let wfm_client = Arc::new(Mutex::new(wfm_client));
+
+    let qf_client = QFClient::new(auth_state);
+    let qf_client = Arc::new(Mutex::new(qf_client));
 
     let rq = s.recv().unwrap();
     let head = rq.headers().iter().find(|&v| v.field.equiv("User-Agent"));
@@ -59,6 +65,7 @@ pub(crate) fn start_server() -> Result<(), AppError> {
         rq,
         uri.as_str(),
         wfm_client.clone(),
+        qf_client.clone(),
         None,
         &mut edit_toggle,
         &mut logged_in,
@@ -72,6 +79,8 @@ pub(crate) fn start_server() -> Result<(), AppError> {
     let db = Arc::new(Mutex::new(db));
     // let lookup = Arc::new(RivenDataLookup::setup().unwrap());
     let websocket = thread::spawn(|| start_websocket());
+
+    let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();
 
     loop {
         if let Some(mut rq) = s.try_recv().unwrap() {
@@ -100,6 +109,7 @@ pub(crate) fn start_server() -> Result<(), AppError> {
                 rq,
                 uri.as_str(),
                 wfm_client.clone(),
+                qf_client.clone(),
                 Some(body.as_str()),
                 &mut edit_toggle,
                 &mut logged_in,
@@ -136,6 +146,7 @@ fn handle_request(
     rq: Request,
     uri: &str,
     wfm: Arc<Mutex<WFMClient>>,
+    qf: Arc<Mutex<QFClient>>,
     body: Option<&str>,
     edit_toggle: &mut bool,
     logged_in: &mut Option<bool>,
@@ -149,7 +160,7 @@ fn handle_request(
         "styles.css" => {
             uri_styles(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
         }
-        "api" => match_uri_api(rq, other, body, wfm, logged_in)
+        "api" => match_uri_api(rq, other, body, wfm, qf, logged_in)
             .map_err(|e| e.prop("handle_request".into())),
         "login" => {
             uri_login(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
@@ -177,11 +188,12 @@ fn match_uri_api(
     uri: &str,
     body: Option<&str>,
     wfm: Arc<Mutex<WFMClient>>,
+    qf: Arc<Mutex<QFClient>>,
     logged_in: &mut Option<bool>,
 ) -> Result<(), AppError> {
     let (root, other) = uri.split_once('/').unwrap_or((uri, ""));
     match root {
-        "login" => uri_api_login(rq, body.unwrap(), wfm.clone(), logged_in)
+        "login" => uri_api_login(rq, body.unwrap(), wfm.clone(), qf, logged_in)
             .map_err(|e| e.prop("match_uri_api".into())),
         "delete_riven" => {
             uri_api_delete_riven(rq, other).map_err(|e| e.prop("match_uri_api".into()))

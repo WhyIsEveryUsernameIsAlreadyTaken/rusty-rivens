@@ -1,12 +1,12 @@
 use std::{ops::DerefMut, sync::Arc};
 
 use ascii::AsciiString;
-use async_lock::Mutex;
 use maud::html;
 use serde::Deserialize;
 use tiny_http::Request;
+use tokio::sync::Mutex;
 
-use crate::{http_client::wfm_client::WFMClient, AppError};
+use crate::{block_in_place, http_client::{qf_client::QFClient, wfm_client::WFMClient}, AppError};
 
 #[derive(Deserialize, Debug)]
 struct Login {
@@ -18,6 +18,7 @@ pub fn uri_api_login(
     rq: Request,
     body: &str,
     wfm: Arc<Mutex<WFMClient>>,
+    qf: Arc<Mutex<QFClient>>,
     logged_in: &mut Option<bool>,
 ) -> Result<(), AppError> {
     let (email, password) = {
@@ -26,11 +27,18 @@ pub fn uri_api_login(
         (log.email, log.password)
     };
 
-    let status = smolscale::block_on(async move {
+    let (status, id, check_code, ingame_name) = block_in_place!(async move {
         let mut wfm = wfm.lock().await;
         let wfm = wfm.deref_mut();
         wfm.login(&email, &password).await
     }).map_err(|e| e.prop("uri_login_req".into()))?;
+
+    block_in_place!(async move {
+        let mut qf = qf.lock().await;
+        let qf = qf.deref_mut();
+        qf.login(id, check_code, ingame_name).await
+    }).map_err(|e| e.prop("uri_login_req".into()))?;
+
 
     // for testing
     let authorized = status.code == 200;
