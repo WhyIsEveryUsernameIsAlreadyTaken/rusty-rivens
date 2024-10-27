@@ -94,8 +94,9 @@ pub fn uri_edit_open(rq: Request) -> io::Result<()> {
                                 id="price-input"
                                 style="font-size: 0.8em;"
                                 type="number"
-                                min="1"
+                                min="10"
                                 max="100000"
+                                value="10"
                                 name="price";
                         }
                         div style="display: flex; flex-wrap: wrap; padding-top: 15px" {
@@ -120,8 +121,8 @@ pub fn uri_edit_open(rq: Request) -> io::Result<()> {
                         }
                     }
                     div style="padding-bottom: 13px;" {
-                        button class="cellbutton" hx-delete="/edit_cancel" style="background-color: #7bdaff;" hx-target="#edit_screen" hx-swap="outerHTML" {"Save"}
-                        button class="cellbutton" hx-delete="/edit_cancel" hx-target="#edit_screen" hx-swap="outerHTML" {"Cancel"}
+                        button class="cellbutton" hx-delete="/edit_cancel" style="background-color: #7bdaff;" hx-target="#edit_screen" hx-swap="outerHTML outerHTML swap:.08s" {"Save"}
+                        button class="cellbutton" hx-delete="/edit_cancel" hx-target="#edit_screen" hx-swap="outerHTML outerHTML swap:.08s" {"Cancel"}
                         button class="cellbutton" style="float: right; margin-right: 13px" {"Blacklist"}
                     }
                 }

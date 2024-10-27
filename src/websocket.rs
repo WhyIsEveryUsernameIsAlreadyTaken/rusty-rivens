@@ -39,7 +39,7 @@ pub fn init_rivens() -> PreEscaped<String> {
         let oid = riven.oid.clone();
         let id = format!("a{oid}");
         let uri = format!("/api/delete_riven/{oid}");
-        let target = format!("outerHTML:#{id}");
+        let target = format!("#{id}");
 
         // let height = format!("height: calc(126px + (2.2em * {}));", riven.attributes.len());
         html! {
@@ -55,7 +55,7 @@ pub fn init_rivens() -> PreEscaped<String> {
                 div class="cellfooterdiv" {
                     div style="float: left;" {
                         button class="cellbutton" hx-post="/edit" hx-target="#screen" hx-swap="beforeend" {"Edit"}
-                        button class="cellbutton" hx-delete=(uri) hx-oob-swap=(target) style="background-color: #ff4444;" {"Delete"}
+                        button class="cellbutton" hx-delete=(uri) hx-target=(target) hx-swap="outerHTML swap:.08s" style="background-color: #ff4444;" {"Delete"}
                     }
                     // img src="/wfm_favicon.ico" style="float: right; margin-left: 23px; padding-right: 13px;";
                 }

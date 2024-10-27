@@ -42,6 +42,15 @@
   transition: .1s;
 }
 
+.cell.htmx-swapping {
+    opacity: 0;
+    transition: opacity .08s ease-out;
+}
+#edit_screen.htmx-swapping {
+    opacity: 0;
+    transition: opacity .08s ease-out;
+}
+
 .slider:before {
   position: absolute;
   content: "";
