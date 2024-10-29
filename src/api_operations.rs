@@ -67,3 +67,27 @@ pub fn uri_api_login(
 pub fn uri_api_delete_riven(rq: Request, _id: &str) -> Result<(), AppError> {
     rq.respond(tiny_http::Response::empty(200)).map_err(|e| AppError::new(e.to_string(), "uri_api_delete_riven".to_string()))
 }
+
+#[derive(Debug, Deserialize)]
+struct EditOptions {
+    price: i64,
+    visible: bool,
+    description: String,
+}
+
+pub fn uri_api_update_riven(rq: Request, _id: &str, body: Option<&str>) -> Result<(), AppError> {
+    if let Some(body) = body {
+        let v = body.find("visible=").unwrap();
+        let d = body.find("description=").unwrap();
+        let left = &body[..v];
+        let middle = &body[v..d];
+        let middle = middle.replace("on", "true").replace("off", "false");
+        let right = &body[d..];
+        let mut body = left.to_string();
+        body.push_str(&middle);
+        body.push_str(right);
+        let body = serde_urlencoded::from_str::<EditOptions>(body.as_str()).expect("bruh this aint urlencoded tf u doin");
+        println!("{body:#?}");
+    };
+    rq.respond(tiny_http::Response::empty(200)).map_err(|e| AppError::new(e.to_string(), "uri_api_update_riven".to_string()))
+}

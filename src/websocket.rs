@@ -22,7 +22,7 @@ pub async fn sync_ui(
 }
 
 pub async fn init_rivens() -> PreEscaped<String> {
-    std::fs::remove_file("inventory_db.sqlite3").unwrap();
+    let _ = std::fs::remove_file("inventory_db.sqlite3");
     let db = InventoryDB::open("inventory_db.sqlite3").expect("grrrr2");
     let db = Arc::new(Mutex::new(db));
     let lookup = RivenDataLookup::setup().await.expect("grrrr3");
@@ -58,7 +58,12 @@ pub async fn init_rivens() -> PreEscaped<String> {
         });
         let oid = riven.oid.clone();
         let id = format!("a{oid}");
-        let uri = format!("/api/delete_riven/{oid}");
+
+        // will be deprecated
+        let delete_uri = format!("/api/delete_riven/{oid}");
+
+        let edit_uri = format!("/edit_open/{oid}");
+
         let target = format!("#{id}");
 
         // let height = format!("height: calc(126px + (2.2em * {}));", riven.attributes.len());
@@ -74,8 +79,8 @@ pub async fn init_rivens() -> PreEscaped<String> {
                 }
                 div class="cellfooterdiv" {
                     div style="float: left;" {
-                        button class="cellbutton" hx-post="/edit" hx-target="#screen" hx-swap="beforeend" {"Edit"}
-                        button class="cellbutton" hx-delete=(uri) hx-target=(target) hx-swap="outerHTML swap:.08s" style="background-color: #ff4444;" {"Delete"}
+                        button class="cellbutton" hx-post=(edit_uri) hx-target="#screen" hx-swap="beforeend" {"Edit"}
+                        button class="cellbutton" hx-delete=(delete_uri) hx-target=(target) hx-swap="outerHTML swap:.08s" style="background-color: #ff4444;" {"Delete"}
                     }
                     // img src="/wfm_favicon.ico" style="float: right; margin-left: 23px; padding-right: 13px;";
                 }

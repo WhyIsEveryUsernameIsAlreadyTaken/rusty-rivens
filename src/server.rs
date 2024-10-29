@@ -8,7 +8,7 @@ use std::{
 use tiny_http::Request;
 
 use crate::{
-    api_operations::{uri_api_delete_riven, uri_api_login}, http_client::{auth_state::AuthState, qf_client::QFClient, wfm_client::WFMClient}, pages::{
+    api_operations::{uri_api_delete_riven, uri_api_login, uri_api_update_riven}, http_client::{auth_state::AuthState, qf_client::QFClient, wfm_client::WFMClient}, pages::{
         home::{uri_edit_cancel, uri_edit_open, uri_home, uri_main, uri_not_found, uri_unauthorized},
         login::uri_login,
     }, resources::{uri_htmx, uri_logo, uri_styles, uri_wfmlogo}, rivens::inventory::{database::InventoryDB, riven_lookop::RivenDataLookup}, websocket::start_websocket, AppError, STOPPED
@@ -151,6 +151,7 @@ fn handle_request(
     logged_in: &mut Option<bool>,
 ) -> Result<(), AppError> {
     let (root, other) = uri[1..].split_once('/').unwrap_or((&uri[1..], ""));
+    let (root, _) = root.split_once('?').unwrap_or((root, ""));
     match root {
         "" | "/" => uri_main(rq, wfm, logged_in).map_err(|e| e.prop("handle_request".into())),
         "htmx.min.js" => {
@@ -167,7 +168,7 @@ fn handle_request(
         "home" => {
             uri_home(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
         }
-        "edit" => uri_edit_open(rq, other)
+        "edit_open" => uri_edit_open(rq, other)
             .map_err(|e| AppError::new(e.to_string(), "handle_request".to_string())),
         "edit_cancel" => uri_edit_cancel(rq)
             .map_err(|e| AppError::new(e.to_string(), "handle_request".to_string())),
@@ -196,6 +197,9 @@ fn match_uri_api(
             .map_err(|e| e.prop("match_uri_api".into())),
         "delete_riven" => {
             uri_api_delete_riven(rq, other).map_err(|e| e.prop("match_uri_api".into()))
+        }
+        "update_riven" => {
+            uri_api_update_riven(rq, other, body).map_err(|e| e.prop("match_uri_api".into()))
         }
         _ => uri_not_found(rq)
             .map_err(|e| AppError::new(e.to_string(), "handle_request".to_string())),

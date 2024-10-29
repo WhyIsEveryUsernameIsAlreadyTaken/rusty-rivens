@@ -69,8 +69,7 @@ fn from_file(path: PathBuf) -> Option<RivenDataLookup> {
     let ts = v["unix_ts"].as_i64();
     if ts.is_none() {
         println!(
-        "WARNING: No timestamp associated with riven lookup data\nGetting data
-            from external server..."
+        "WARNING: No timestamp associated with riven lookup data\nGetting data from external server..."
         );
         return None;
     }
@@ -79,16 +78,14 @@ fn from_file(path: PathBuf) -> Option<RivenDataLookup> {
     let elapsed = now - ts.expect("could not parse timestamp");
     if elapsed >= MONTH_IN_SECONDS {
         println!(
-        "WARNING: Riven lookup data is too old\nGetting data
-            from external server..."
+        "WARNING: Riven lookup data is too old\nGetting data from external server..."
         );
         return None;
     }
     let res = from_value::<RivenDataLookup>(v["data"].take());
     if res.is_err() {
         println!(
-        "WARNING: Could not parse riven lookup data\nGetting data
-            from external server..."
+        "WARNING: Could not parse riven lookup data\nGetting data from external server..."
         );
         return None;
     }
@@ -105,8 +102,7 @@ impl RivenDataLookup {
             from_file(path.clone())
         } else {
             println!(
-            "WARNING: `rivenLookupData.json` does not exist\nGetting data
-                from external server..."
+            "WARNING: `rivenLookupData.json` does not exist\nGetting data from external server..."
             );
             None
         };

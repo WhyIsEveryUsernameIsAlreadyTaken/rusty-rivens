@@ -77,53 +77,62 @@ pub fn uri_edit_cancel(rq: Request) -> io::Result<()> {
     rq.respond(Response::empty(200))
 }
 
-pub fn uri_edit_open(rq: Request, id: &str) -> io::Result<()> {
+pub fn uri_edit_open(rq: Request, oid: &str) -> io::Result<()> {
     let title = format!("Edit <RIVENNAME>");
+    let post_url = format!("/api/update_riven/{oid}");
+
     let pagecontent = html! {
         div id="edit_screen" style="display: block;" {
             div class="row_overlay" {
                 div id="edit_screen_gui" {
-                    div style="flex-grow: 1;" {
-                        div class="celltitle" {
-                            (title)
-                        }
-                        hr {}
-                        div {
-                            label for="price-input" style="padding-right: 13px; padding-left: 13px;" {"Price"}
-                            input
-                                id="price-input"
-                                style="font-size: 0.8em;"
-                                type="number"
-                                min="10"
-                                max="100000"
-                                value="10"
-                                name="price";
-                        }
-                        div style="display: flex; flex-wrap: wrap; padding-top: 15px" {
-                            label for="visible-toggle" style="padding-right: 13px; padding-left: 13px;" {"Visible"}
-                            label class="switch" {
+                    form hx-post=(post_url) hx-target="#edit_screen" hx-swap="outerHTML swap:.08s"  {
+                        div style="flex-grow: 1;" {
+                            div class="celltitle" {
+                                (title)
+                            }
+                            hr {}
+                            div {
+                                label for="price-input" style="padding-right: 13px; padding-left: 13px;" {"Price"}
                                 input
-                                    id="visible-toggle"
-                                    type="checkbox"
-                                    checked
-                                    name="visible";
-                                span class="slider";
+                                    id="price-input"
+                                    style="font-size: 0.8em;"
+                                    type="number"
+                                    min="10"
+                                    max="100000"
+                                    value="10"
+                                    name="price";
+                            }
+                            div style="display: flex; flex-wrap: wrap; padding-top: 15px" {
+                                label for="visible-toggle" style="padding-right: 13px; padding-left: 13px;" {"Visible"}
+                                label class="switch" {
+                                    input
+                                        id="visible-toggle"
+                                        type="checkbox"
+                                        checked
+                                        name="visible";
+                                    span class="slider";
+                                }
+                            }
+                            div style="display: flex; flex-direction: column;" {
+                                textarea
+                                    type="text"
+                                    name="description"
+                                    placeholder="Description (Optional)"
+                                    rows="4"
+                                    resize="none"
+                                    maxlength="200" {""}
                             }
                         }
-                        div style="display: flex; flex-direction: column;" {
-                            textarea
-                                type="text"
-                                name="description"
-                                placeholder="Description (Optional)"
-                                rows="4"
-                                resize="none"
-                                maxlength="200" {""}
+                        div style="padding-bottom: 13px;" {
+                            button
+                                class="cellbutton"
+                                type="submit"
+                                style="background-color: #7bdaff;"
+                                {"Save"}
+
+                            button class="cellbutton" hx-delete="/edit_cancel" hx-target="#edit_screen" hx-swap="outerHTML swap:.08s" {"Cancel"}
+                            button class="cellbutton" style="float: right; margin-right: 13px" {"Blacklist"}
                         }
-                    }
-                    div style="padding-bottom: 13px;" {
-                        button class="cellbutton" hx-delete="/edit_cancel" style="background-color: #7bdaff;" hx-target="#edit_screen" hx-swap="outerHTML outerHTML swap:.08s" {"Save"}
-                        button class="cellbutton" hx-delete="/edit_cancel" hx-target="#edit_screen" hx-swap="outerHTML outerHTML swap:.08s" {"Cancel"}
-                        button class="cellbutton" style="float: right; margin-right: 13px" {"Blacklist"}
                     }
                 }
             }

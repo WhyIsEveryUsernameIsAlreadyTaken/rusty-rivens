@@ -742,6 +742,11 @@ async fn handle(
         };
         sender.send(resp).await.expect("hello?");
         println!("sent response through channel");
+
+        // I really shouldn't be doing this...
+        if inner.host.clone().unwrap().contains("quantframe") {
+            break Ok(());
+        }
     }
 }
 
