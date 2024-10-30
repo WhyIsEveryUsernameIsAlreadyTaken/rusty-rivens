@@ -157,9 +157,12 @@ pub async fn start_websocket() {
 
 fn delete_riven(id: &str) -> PreEscaped<String> {
     let del_id = format!("a{id}");
+    let del_id_target = format!("#{del_id}");
     let target = format!("outerHTML:#{del_id}");
-    let uri = format!("/delete_riven/{id}");
+    let uri = format!("/api/delete_riven/{id}");
     html! {
-        div id=(del_id) hx-delete=(uri) hx-swap-oob=(target) hx-trigger="load";
+        div id=(del_id) hx-swap-oob=(target) {
+            div hx-delete=(uri) hx-swap="outerHTML" hx-target=(del_id_target) hx-trigger="load";
+        }
     }
 }
