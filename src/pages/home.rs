@@ -1,12 +1,25 @@
 use ascii::AsciiString;
 use maud::{html, PreEscaped, DOCTYPE};
+use std::{
+    io::{self},
+    ops::{Deref, DerefMut},
+    sync::Arc,
+};
 use tiny_http::{Request, Response, StatusCode};
 use tokio::sync::Mutex;
-use std::{io::{self}, ops::{Deref, DerefMut}, sync::Arc};
 
-use crate::{block_in_place, http_client::wfm_client::WFMClient, rivens::inventory::convert_raw_inventory::{Item, Units}, AppError};
+use crate::{
+    block_in_place,
+    http_client::wfm_client::WFMClient,
+    rivens::inventory::convert_raw_inventory::{Item, Units},
+    AppError,
+};
 
-pub fn uri_main(rq: Request, wfm: Arc<Mutex<WFMClient>>, logged_in: &mut Option<bool>) -> Result<(), AppError> {
+pub fn uri_main(
+    rq: Request,
+    wfm: Arc<Mutex<WFMClient>>,
+    logged_in: &mut Option<bool>,
+) -> Result<(), AppError> {
     let pagecontent = if logged_in.is_some() {
         html! {
             (DOCTYPE)
@@ -24,7 +37,8 @@ pub fn uri_main(rq: Request, wfm: Arc<Mutex<WFMClient>>, logged_in: &mut Option<
             let mut wfm = wfm.lock().await;
             let wfm = wfm.deref_mut();
             wfm.validate().await
-        }).map_err(|e| e.prop("uri_main".into()))?;
+        })
+        .map_err(|e| e.prop("uri_main".into()))?;
         if valid {
             *logged_in = Some(true);
             html! {
@@ -53,10 +67,15 @@ pub fn uri_main(rq: Request, wfm: Arc<Mutex<WFMClient>>, logged_in: &mut Option<
         }
     };
 
-    rq.respond(tiny_http::Response::from_string(pagecontent.into_string()).with_header(tiny_http::Header {
-        field: "Content-Type".parse().unwrap(),
-        value: AsciiString::from_ascii("text/html; charset=utf8").unwrap(),
-    })).map_err(|e| AppError::new(e.to_string(), "uri_main".to_string()))
+    rq.respond(
+        tiny_http::Response::from_string(pagecontent.into_string()).with_header(
+            tiny_http::Header {
+                field: "Content-Type".parse().unwrap(),
+                value: AsciiString::from_ascii("text/html; charset=utf8").unwrap(),
+            },
+        ),
+    )
+    .map_err(|e| AppError::new(e.to_string(), "uri_main".to_string()))
 }
 
 pub fn uri_home(rq: Request) -> io::Result<()> {
@@ -67,10 +86,14 @@ pub fn uri_home(rq: Request) -> io::Result<()> {
             }
         }
     };
-    rq.respond(tiny_http::Response::from_string(pagecontent.into_string()).with_header(tiny_http::Header {
-        field: "Content-Type".parse().unwrap(),
-        value: AsciiString::from_ascii("text/html; charset=utf8").unwrap(),
-    }))
+    rq.respond(
+        tiny_http::Response::from_string(pagecontent.into_string()).with_header(
+            tiny_http::Header {
+                field: "Content-Type".parse().unwrap(),
+                value: AsciiString::from_ascii("text/html; charset=utf8").unwrap(),
+            },
+        ),
+    )
 }
 
 pub fn uri_edit_cancel(rq: Request) -> io::Result<()> {
@@ -79,7 +102,7 @@ pub fn uri_edit_cancel(rq: Request) -> io::Result<()> {
 
 pub fn uri_edit_open(rq: Request, oid: &str) -> io::Result<()> {
     let title = format!("Edit <RIVENNAME>");
-    let post_url = format!("/api/update_riven/{oid}");
+    let post_url = format!("/api/update_single_riven/{oid}");
 
     let pagecontent = html! {
         div id="edit_screen" style="display: block;" {
@@ -138,10 +161,14 @@ pub fn uri_edit_open(rq: Request, oid: &str) -> io::Result<()> {
             }
         }
     };
-    rq.respond(tiny_http::Response::from_string(pagecontent.into_string()).with_header(tiny_http::Header {
-        field: "Content-Type".parse().unwrap(),
-        value: AsciiString::from_ascii("text/html; charset=utf8").unwrap(),
-    }))
+    rq.respond(
+        tiny_http::Response::from_string(pagecontent.into_string()).with_header(
+            tiny_http::Header {
+                field: "Content-Type".parse().unwrap(),
+                value: AsciiString::from_ascii("text/html; charset=utf8").unwrap(),
+            },
+        ),
+    )
 }
 
 pub fn uri_unauthorized(rq: Request) -> io::Result<()> {
@@ -154,12 +181,14 @@ pub fn uri_unauthorized(rq: Request) -> io::Result<()> {
         }
     };
 
-    rq.respond(tiny_http::Response::from_string(pagecontent.into_string())
-        .with_header(tiny_http::Header {
-            field: "Content-Type".parse().unwrap(),
-            value: AsciiString::from_ascii("text/html; charset=utf8").unwrap(),
-        })
-        .with_status_code(StatusCode(403)))
+    rq.respond(
+        tiny_http::Response::from_string(pagecontent.into_string())
+            .with_header(tiny_http::Header {
+                field: "Content-Type".parse().unwrap(),
+                value: AsciiString::from_ascii("text/html; charset=utf8").unwrap(),
+            })
+            .with_status_code(StatusCode(403)),
+    )
 }
 
 pub fn uri_not_found(rq: Request) -> io::Result<()> {
@@ -172,10 +201,12 @@ pub fn uri_not_found(rq: Request) -> io::Result<()> {
         }
     };
 
-    rq.respond(tiny_http::Response::from_string(pagecontent.into_string())
-        .with_header(tiny_http::Header {
-            field: "Content-Type".parse().unwrap(),
-            value: AsciiString::from_ascii("text/html; charset=utf8").unwrap(),
-        })
-        .with_status_code(StatusCode(404)))
+    rq.respond(
+        tiny_http::Response::from_string(pagecontent.into_string())
+            .with_header(tiny_http::Header {
+                field: "Content-Type".parse().unwrap(),
+                value: AsciiString::from_ascii("text/html; charset=utf8").unwrap(),
+            })
+            .with_status_code(StatusCode(404)),
+    )
 }

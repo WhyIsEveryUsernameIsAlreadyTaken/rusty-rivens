@@ -198,8 +198,11 @@ fn match_uri_api(
         "delete_riven" => {
             uri_api_delete_riven(rq, other).map_err(|e| e.prop("match_uri_api".into()))
         }
-        "update_riven" => {
-            uri_api_update_riven(rq, other, body).map_err(|e| e.prop("match_uri_api".into()))
+        "update_single_riven" => {
+            uri_api_update_riven(rq, false, other, body).map_err(|e| e.prop("match_uri_api".into()))
+        }
+        "update_mult_riven" => {
+            uri_api_update_riven(rq, true, other, body).map_err(|e| e.prop("match_uri_api".into()))
         }
         _ => uri_not_found(rq)
             .map_err(|e| AppError::new(e.to_string(), "handle_request".to_string())),

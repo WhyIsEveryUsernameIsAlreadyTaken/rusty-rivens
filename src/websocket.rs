@@ -1,4 +1,4 @@
-use std::{future::Future, net::{TcpListener, TcpStream}, sync::Arc};
+use std::{future::Future, net::{TcpListener, TcpStream}, sync::Arc, thread, time::Duration};
 
 use maud::{html, PreEscaped};
 use serde_json::from_str;
@@ -57,10 +57,8 @@ pub async fn init_rivens() -> PreEscaped<String> {
             }
         });
         let oid = riven.oid.clone();
+        println!("{oid}");
         let id = format!("a{oid}");
-
-        // will be deprecated
-        let delete_uri = format!("/api/delete_riven/{oid}");
 
         let edit_uri = format!("/edit_open/{oid}");
 
@@ -80,7 +78,7 @@ pub async fn init_rivens() -> PreEscaped<String> {
                 div class="cellfooterdiv" {
                     div style="float: left;" {
                         button class="cellbutton" hx-post=(edit_uri) hx-target="#screen" hx-swap="beforeend" {"Edit"}
-                        button class="cellbutton" hx-delete=(delete_uri) hx-target=(target) hx-swap="outerHTML swap:.08s" style="background-color: #ff4444;" {"Delete"}
+                        // button class="cellbutton" hx-delete=(delete_uri) hx-target=(target) hx-swap="outerHTML swap:.08s" style="background-color: #ff4444;" {"Delete"}
                     }
                     // img src="/wfm_favicon.ico" style="float: right; margin-left: 23px; padding-right: 13px;";
                 }
@@ -122,13 +120,7 @@ impl WsocHandle {
 
 #[tokio::main]
 pub async fn start_websocket() {
-    let lookup = Arc::new(
-        RivenDataLookup::setup().await.expect(
-        "FATAL: Could not retrieve riven lookup data"
-        )
-    );
     let server = TcpListener::bind("localhost:8069").expect("could not bind to port: ");
-    let mut current_handle: Option<JoinHandle<()>> = None;
     loop {
         let (stream, _addr) = server.accept().expect("could not accept connection");
         //if let Some(mut v) = current_conn.take() { // close the last connection
@@ -138,13 +130,36 @@ pub async fn start_websocket() {
         println!("handshake complete");
         let rivens = init_rivens().await;
         assert!(!rivens.clone().into_string().is_empty());
+        /* 6532fb0a9b3e2564890cc667
+         * 65d6e4d8833ce06fd505ba12
+         * 6636d57a575ceadbef0880a6
+         * 6637edfec7286187bd0974cf
+        */
         let msg = html! {
             div id="riven-table" class="row" hx-swap-oob="beforeend" {
                 (rivens)
             }
         };
         wsoc_connection.send(msg.into_string().into()).unwrap();
+        thread::sleep(Duration::from_secs(1));
+        wsoc_connection.send(delete_riven("6532fb0a9b3e2564890cc667").into_string().into()).unwrap();
+        thread::sleep(Duration::from_secs(1));
+        wsoc_connection.send(delete_riven("65d6e4d8833ce06fd505ba12").into_string().into()).unwrap();
+        thread::sleep(Duration::from_secs(1));
+        wsoc_connection.send(delete_riven("6636d57a575ceadbef0880a6").into_string().into()).unwrap();
+        thread::sleep(Duration::from_secs(1));
+        wsoc_connection.send(delete_riven("6637edfec7286187bd0974cf").into_string().into()).unwrap();
+        thread::sleep(Duration::from_secs(1));
         wsoc_connection.close(None).expect("should be closed");
         // let mut conn = WsocHandle::new(wsoc_connection);
+    }
+}
+
+fn delete_riven(id: &str) -> PreEscaped<String> {
+    let del_id = format!("a{id}");
+    let target = format!("outerHTML:#{del_id}");
+    let uri = format!("/delete_riven/{id}");
+    html! {
+        div id=(del_id) hx-delete=(uri) hx-swap-oob=(target) hx-trigger="load";
     }
 }

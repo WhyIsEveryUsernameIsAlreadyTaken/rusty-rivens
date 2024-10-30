@@ -75,7 +75,7 @@ struct EditOptions {
     description: String,
 }
 
-pub fn uri_api_update_riven(rq: Request, _id: &str, body: Option<&str>) -> Result<(), AppError> {
+pub fn uri_api_update_riven(rq: Request, mult: bool, _id: &str, body: Option<&str>) -> Result<(), AppError> {
     if let Some(body) = body {
         let v = body.find("visible=").unwrap();
         let d = body.find("description=").unwrap();
