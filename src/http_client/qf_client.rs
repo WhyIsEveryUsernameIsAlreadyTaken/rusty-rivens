@@ -1,7 +1,7 @@
 use std::{ops::{Deref, DerefMut}, sync::Arc, time::Duration};
 
 use serde_json::json;
-use tokio::sync::Mutex;
+use tokio::sync::{mpsc::Receiver, Mutex};
 
 use crate::{block_in_place, AppError};
 
@@ -15,7 +15,7 @@ pub struct QFClient {
 }
 
 impl HttpClient for QFClient {
-    async fn sender_fn(&mut self, rq: super::client::RequestBuilder) -> Result<(ArcClientHandle, tokio::sync::mpsc::Receiver<super::client::Response>, super::client::RequestBuilder), AppError> {
+    async fn sender_fn(&mut self, rq: RequestBuilder) -> Result<(ArcClientHandle, RequestBuilder), AppError> {
         let auth_mutex = self.auth.lock().await;
         let auth = auth_mutex.deref();
         let rq = if !auth.qf_access_token.is_empty() {
@@ -27,16 +27,22 @@ impl HttpClient for QFClient {
         drop(auth_mutex);
         let (request_sender, request_receiver) = tokio::sync::mpsc::channel::<Request>(1);
         let (respones_sender, response_receiver) = tokio::sync::mpsc::channel::<Response>(1);
-        let client_handle = ClientHandle::new()
+        let client_handle = if let Some(handle) = self.client_handle.clone() {
+            handle
+        } else {
+            let handle = ClientHandle::new()
             .port(443)
             .addr("https://api.quantframe.app/")
             .map_err(|e| AppError::new(e.to_string(), "send_request".to_string()))?
             .timeout(Duration::from_secs(5))
             .send_channel(request_sender)
+            .receive_channel(response_receiver)
             .start_client(request_receiver, respones_sender);
-        let client_handle = Arc::new(Mutex::new(client_handle));
-        self.client_handle = Some(client_handle.clone());
-        Ok((client_handle, response_receiver, rq))
+            let handle = Arc::new(Mutex::new(handle));
+            self.client_handle = Some(handle.clone());
+            handle
+        };
+        Ok((client_handle, rq))
     }
 
     async fn rate_limit(&self) {

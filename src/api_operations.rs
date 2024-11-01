@@ -6,7 +6,7 @@ use serde::Deserialize;
 use tiny_http::Request;
 use tokio::sync::Mutex;
 
-use crate::{block_in_place, http_client::{qf_client::QFClient, wfm_client::WFMClient}, AppError};
+use crate::{block_in_place, http_client::{qf_client::QFClient, wfm_client::WFMClient}, rivens::inventory::riven_lookop::RivenDataLookup, server::RIVEN_LOOKUP, AppError};
 
 #[derive(Deserialize, Debug)]
 struct Login {
@@ -33,11 +33,17 @@ pub fn uri_api_login(
         wfm.login(&email, &password).await
     }).map_err(|e| e.prop("uri_login_req".into()))?;
 
-    block_in_place!(async move {
+    block_in_place!(async {
+        let qf = qf.clone();
         let mut qf = qf.lock().await;
         let qf = qf.deref_mut();
         qf.login(id, check_code, ingame_name).await
     }).map_err(|e| e.prop("uri_login_req".into()))?;
+
+    let lookup = block_in_place!( async { RivenDataLookup::setup(qf.clone()).await }).expect(
+        "FATAL: Could not retrieve riven lookup data"
+    );
+    RIVEN_LOOKUP.set(lookup).expect("FATAL: Could not store riven lookup data in memory");
 
     // for testing
     let authorized = status.code == 200;

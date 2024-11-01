@@ -1,11 +1,11 @@
-use std::{env, fs::{read_to_string, File}, io::Write, path::PathBuf, sync::Arc};
+use std::{env, fs::{read_to_string, File}, io::Write, ops::DerefMut, path::PathBuf, sync::Arc};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{from_str, from_value, to_string_pretty, to_value, Value};
 use time::OffsetDateTime;
 use tokio::sync::Mutex;
 
-use crate::{block_in_place, http_client::{auth_state::AuthState, client::{HttpClient, Method, RequestBuilder}, qf_client::QFClient}, AppError};
+use crate::{block_in_place, http_client::{auth_state::AuthState, client::{HttpClient, Method, RequestBuilder}, qf_client::QFClient, wfm_client::WFMClient}, AppError};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RivenDataLookup {
@@ -93,7 +93,9 @@ fn from_file(path: PathBuf) -> Option<RivenDataLookup> {
 }
 
 impl RivenDataLookup {
-    pub async fn setup() -> Result<Self, AppError> {
+    pub async fn setup(
+        qf: Arc<Mutex<QFClient>>,
+    ) -> Result<Self, AppError> {
         let path: PathBuf = env::var("PWD")
             .map_err(|e| AppError::new(e.to_string().into(), "setup: env::var".into()))?
             .into();
@@ -109,10 +111,9 @@ impl RivenDataLookup {
         let riven_data = if let Some(data) = riven_data {
             data
         } else {
-            let auth = AuthState::setup().unwrap();
-            let auth = Arc::new(Mutex::new(auth));
-            let mut qf = QFClient::new(auth.clone());
             let res = {
+                let mut qf_lock = qf.lock().await;
+                let qf = qf_lock.deref_mut();
                 let req = RequestBuilder::new()
                     .method(Method::GET)
                     .uri(format!("{}/items/riven/raw", qf.endpoint).as_str())

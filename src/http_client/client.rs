@@ -1,14 +1,24 @@
 use core::fmt;
 use std::{
-    convert::Infallible, fmt::Display, io::ErrorKind, ops::Deref, str::FromStr, sync::Arc, time::{Duration, SystemTime}
+    borrow::{Borrow, BorrowMut}, convert::Infallible, fmt::Display, io::ErrorKind, ops::{Deref, DerefMut}, str::FromStr, sync::Arc, time::{Duration, SystemTime}
 };
 
 use serde_json::Value;
-use tokio::{io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader}, net::TcpStream, sync::{mpsc::{error::{RecvError, SendError as SError, TryRecvError}, Receiver, Sender}, Mutex}, task::JoinHandle};
+use tokio::{
+    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
+    net::TcpStream,
+    sync::{
+        mpsc::{
+            error::{RecvError, SendError as SError, TryRecvError},
+            Receiver, Sender,
+        },
+        Mutex,
+    },
+    task::JoinHandle,
+};
 use tokio_rustls::{client::TlsStream, rustls::RootCertStore};
 
 use crate::{AppError, STOPPED};
-
 
 #[derive(Debug, PartialEq)]
 pub struct Header(Arc<str>, Arc<str>);
@@ -145,10 +155,11 @@ impl Request {
         let req = req.as_bytes();
 
         let mut out = String::new();
-        stream.write_all(req)
+        stream
+            .write_all(req)
             .await
             .map_err(|e| SendError::IoError(e))?;
-        println!("{} bytes written.", req.len());
+        println!("{} bytes written for `{:?}`.", req.len(), self.uri);
         let mut reader = BufReader::new(stream);
         if let Ok(v) = tokio::time::timeout(self.timeout, reader.read_line(&mut out)).await {
             v.map_err(|e| SendError::IoError(e))?;
@@ -415,6 +426,7 @@ impl std::error::Error for HeaderInsertError {}
 #[derive(Debug)]
 pub enum SendError {
     SenderNone,
+    SenderClosed,
     UriNone,
     MethodNone,
     RequestTimeout(Duration),
@@ -449,6 +461,7 @@ impl Display for SendError {
             SendError::ChanSendError(e) => {
                 f.write_str(format!("ChanSendError: {}", e.to_string()).as_str())
             }
+            SendError::SenderClosed => f.write_str("Sender part of channel closed prematurely"),
         }
     }
 }
@@ -549,7 +562,8 @@ impl Clone for ClientHandleInner {
 #[derive(Debug)]
 pub struct ClientHandle {
     handle: Option<JoinHandle<Result<(), ConnectionError>>>,
-    sender: Option<Sender<Request>>,
+    request_sender: Option<Sender<Request>>,
+    response_receiver: Option<Receiver<Response>>,
     inner: ClientHandleInner,
 }
 
@@ -606,15 +620,12 @@ impl ClientHandle {
     pub fn new() -> Self {
         Self {
             handle: None,
-            sender: None,
+            request_sender: None,
+            response_receiver: None,
             inner: Default::default(),
         }
     }
-    pub fn start_client(
-        mut self,
-        receiver: Receiver<Request>,
-        sender: Sender<Response>,
-    ) -> Self {
+    pub fn start_client(mut self, receiver: Receiver<Request>, sender: Sender<Response>) -> Self {
         self.handle = Some(tokio::task::spawn(handle(
             self.inner.clone(),
             receiver,
@@ -624,30 +635,34 @@ impl ClientHandle {
     }
 
     async fn send(
-        &self,
+        &mut self,
         req: Request,
-        receiver: &mut Receiver<Response>,
     ) -> Result<Response, SendError> {
-        if self.sender.is_none() {
+        if self.request_sender.is_none() {
             return Err(SendError::SenderNone);
         };
-        self.sender
+        self.request_sender
             .as_ref()
             .unwrap()
             .send(req)
             .await
             .map_err(|e| SendError::ChanSendError(e))?;
+        let mut receiver = self.response_receiver.take().expect("FATAL: Response Receiver dropped");
         let res = match receiver.recv().await {
-            Some(v) => {
-                v
-            },
+            Some(v) => v,
             None => return Err(SendError::Recv),
         };
+        self.response_receiver = Some(receiver);
         Ok(res)
     }
 
     pub fn send_channel(mut self, sender: Sender<Request>) -> Self {
-        self.sender = Some(sender);
+        self.request_sender = Some(sender);
+        self
+    }
+
+    pub fn receive_channel(mut self, receiver: Receiver<Response>) -> Self {
+        self.response_receiver = Some(receiver);
         self
     }
 
@@ -703,6 +718,7 @@ async fn handle(
 
     println!("Connecting to {addr}");
     let mut tstream = connect(&inner).await.unwrap();
+    let sender = &sender;
 
     // nvm i dont like this anymore...
     // too much indentation...
@@ -718,12 +734,17 @@ async fn handle(
         {
             req
         } else {
+            assert!(!sender.is_closed(), "FATAL Sender closed for response channel on {addr}");
+            // println!("handle healty");
+            if STOPPED.get().is_some() {
+                drop(tstream);
+                println!("Connection Closed for {addr}");
+                return Ok(());
+            }
             continue;
         };
         let resp = match request.send(&mut tstream).await {
-            Ok(v) => {
-                v
-            },
+            Ok(v) => v,
             Err(e) => match &e {
                 SendError::IoError(ie) => match ie.kind() {
                     ErrorKind::WriteZero => {
@@ -742,17 +763,10 @@ async fn handle(
         };
         sender.send(resp).await.expect("hello?");
         println!("sent response through channel");
-
-        // I really shouldn't be doing this...
-        if inner.host.clone().unwrap().contains("quantframe") {
-            break Ok(());
-        }
     }
 }
 
-async fn connect(
-    inner: &ClientHandleInner,
-) -> Result<TlsStream<TcpStream>, ConnectionError> {
+async fn connect(inner: &ClientHandleInner) -> Result<TlsStream<TcpStream>, ConnectionError> {
     let root_store = RootCertStore {
         roots: webpki_roots::TLS_SERVER_ROOTS.into(),
     };
@@ -762,12 +776,13 @@ async fn connect(
     let host_str = inner.host.clone().unwrap();
     let host = host_str.deref().to_string().try_into().unwrap();
     let addr = format!("{}:{}", host_str, inner.port.unwrap());
-    if let Ok(stream) = tokio::time::timeout(inner.timeout.unwrap(), tokio::net::TcpStream::connect(addr))
-        .await
+    if let Ok(stream) =
+        tokio::time::timeout(inner.timeout.unwrap(), tokio::net::TcpStream::connect(addr)).await
     {
         let stream = stream.map_err(|e| ConnectionError::IoError(e))?;
         let connector = tokio_rustls::TlsConnector::from(Arc::new(config));
-        let resp = connector.connect(host, stream)
+        let resp = connector
+            .connect(host, stream)
             .await
             .map_err(|e| ConnectionError::IoError(e));
         resp
@@ -779,24 +794,25 @@ async fn connect(
 pub type ArcClientHandle = Arc<Mutex<ClientHandle>>;
 
 pub trait HttpClient {
-    async fn sender_fn(&mut self, rq: RequestBuilder) -> Result<(ArcClientHandle, Receiver<Response>, RequestBuilder), AppError>;
-    async fn rate_limit(&self);
-    async fn send_request(
+    async fn sender_fn(
         &mut self,
-        rq: Request,
-    ) -> Result<ApiResult, AppError> {
-        let (client_handle, mut response_receiver, rq) = self.sender_fn(rq.into()).await.map_err(|e| e.prop("send_request".into()))?;
+        rq: RequestBuilder,
+    ) -> Result<(ArcClientHandle, RequestBuilder), AppError>;
+    async fn rate_limit(&self);
+    async fn send_request(&mut self, rq: Request) -> Result<ApiResult, AppError> {
+        let (client_handle, rq) = self
+            .sender_fn(rq.into())
+            .await
+            .map_err(|e| e.prop("send_request".into()))?;
         let rq = rq.build();
         self.rate_limit().await;
 
         let start = SystemTime::now();
 
-        let client_handle_mutex = client_handle.lock().await;
-        let client_handle = client_handle_mutex.deref();
+        let mut client_handle_mutex = client_handle.lock().await;
+        let client_handle = client_handle_mutex.deref_mut();
         let method = match rq.method.clone() {
-            Some(v) => {
-                v.to_string()
-            },
+            Some(v) => v.to_string(),
             None => "NILMETHOD".to_string(),
         };
         let uri = match rq.uri.clone() {
@@ -804,7 +820,7 @@ pub trait HttpClient {
             None => "NILURI".into(),
         };
         let response = client_handle
-            .send(rq, &mut response_receiver)
+            .send(rq)
             .await
             .map_err(|e| AppError::new(e.to_string(), "send_request".into()))?;
         drop(client_handle_mutex);

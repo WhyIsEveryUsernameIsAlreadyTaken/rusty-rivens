@@ -18,6 +18,7 @@ use crate::{
 struct User(Option<AsciiString>);
 
 static USER: OnceCell<User> = OnceCell::new();
+pub static RIVEN_LOOKUP: OnceCell<RivenDataLookup> = OnceCell::new();
 
 struct LastModified(SystemTime, SystemTime);
 
@@ -48,7 +49,7 @@ pub async fn start_server() -> Result<(), AppError> {
     let wfm_client = WFMClient::new(auth_state.clone());
     let wfm_client = Arc::new(Mutex::new(wfm_client));
 
-    let qf_client = QFClient::new(auth_state.clone());
+    let qf_client = QFClient::new(auth_state);
     let qf_client = Arc::new(Mutex::new(qf_client));
 
     let rq = s.recv().unwrap();
@@ -76,9 +77,6 @@ pub async fn start_server() -> Result<(), AppError> {
         .map_err(|e| AppError::new(e.to_string(), "start_server: InventoryDB::open".to_string()))?;
 
     let db = Arc::new(Mutex::new(db));
-    let lookup = Arc::new(RivenDataLookup::setup().await.expect(
-        "FATAL: Could not retrieve riven lookup data"
-    ));
     thread::spawn(|| start_websocket());
 
     let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();
@@ -153,7 +151,7 @@ fn handle_request(
     let (root, other) = uri[1..].split_once('/').unwrap_or((&uri[1..], ""));
     let (root, _) = root.split_once('?').unwrap_or((root, ""));
     match root {
-        "" | "/" => uri_main(rq, wfm, logged_in).map_err(|e| e.prop("handle_request".into())),
+        "" | "/" => uri_main(rq, wfm, qf, logged_in).map_err(|e| e.prop("handle_request".into())),
         "htmx.min.js" => {
             uri_htmx(rq).map_err(|e| AppError::new(e.to_string(), "handle_request".to_string()))
         }

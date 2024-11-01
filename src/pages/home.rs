@@ -9,15 +9,13 @@ use tiny_http::{Request, Response, StatusCode};
 use tokio::sync::Mutex;
 
 use crate::{
-    block_in_place,
-    http_client::wfm_client::WFMClient,
-    rivens::inventory::convert_raw_inventory::{Item, Units},
-    AppError,
+    block_in_place, http_client::{qf_client::QFClient, wfm_client::WFMClient}, rivens::inventory::{convert_raw_inventory::{Item, Units}, riven_lookop::RivenDataLookup}, server::RIVEN_LOOKUP, AppError
 };
 
 pub fn uri_main(
     rq: Request,
     wfm: Arc<Mutex<WFMClient>>,
+    qf: Arc<Mutex<QFClient>>,
     logged_in: &mut Option<bool>,
 ) -> Result<(), AppError> {
     let pagecontent = if logged_in.is_some() {
@@ -41,6 +39,10 @@ pub fn uri_main(
         .map_err(|e| e.prop("uri_main".into()))?;
         if valid {
             *logged_in = Some(true);
+            let lookup = block_in_place!( async { RivenDataLookup::setup(qf).await }).expect(
+                "FATAL: Could not retrieve riven lookup data"
+            );
+            RIVEN_LOOKUP.set(lookup).expect("FATAL: Could not store riven lookup data in memory");
             html! {
                 (DOCTYPE)
                 head {

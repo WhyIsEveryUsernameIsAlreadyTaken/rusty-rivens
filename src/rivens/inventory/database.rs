@@ -212,19 +212,24 @@ impl InventoryDB {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs::OpenOptions, io::Write, ops::{Add, Sub}};
+    use std::{fs::OpenOptions, io::Write, ops::{Add, Sub}, sync::Arc};
 
     use dotenv::dotenv;
     use rand::random;
     use time::Duration as LibDuration;
+    use tokio::sync::Mutex;
 
-    use crate::rivens::inventory::{
+    use crate::{http_client::{auth_state::AuthState, qf_client::QFClient}, rivens::inventory::{
             convert_raw_inventory::convert_inventory_data, database::Auction, raw_inventory::decrypt_last_data, riven_lookop::RivenDataLookup
-        };
+        }};
 
     async fn test_insert_data() {
         dotenv().unwrap();
-        let lookup = RivenDataLookup::setup().await.unwrap();
+        let auth = AuthState::setup().expect("hehe");
+        let auth = Arc::new(Mutex::new(auth));
+        let qf = QFClient::new(auth);
+        let qf = Arc::new(Mutex::new(qf));
+        let lookup = RivenDataLookup::setup(qf).await.unwrap();
         let raw_upgrades = decrypt_last_data(None).unwrap();
         let items = convert_inventory_data(&lookup, raw_upgrades);
         let mut auctions = Vec::with_capacity(items.len());

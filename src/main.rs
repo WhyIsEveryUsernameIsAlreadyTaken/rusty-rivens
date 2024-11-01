@@ -1,4 +1,4 @@
-use std::{error::Error, fmt::{self, Display}, sync::Arc, thread};
+use std::{error::Error, fmt::{self, Display}, panic, process, sync::Arc};
 
 
 use once_cell::sync::OnceCell;
@@ -9,7 +9,6 @@ use tao::{
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
 };
-use tokio::runtime::{Handle, Runtime};
 use wry::WebViewBuilder;
 
 mod pages;
@@ -70,6 +69,13 @@ async fn main() -> wry::Result<()> {
     tokio::task::spawn(start_server());
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
+
+    let orig_hook = panic::take_hook();
+    panic::set_hook(Box::new(move |panic_info| {
+        STOPPED.set(true).unwrap();
+        orig_hook(panic_info);
+        process::exit(1)
+    }));
 
     #[cfg(any(
         target_os = "windows",

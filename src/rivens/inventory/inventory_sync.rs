@@ -86,9 +86,12 @@ fn get_new_items(db_items: &Vec<Item>, inventory_items: Vec<Upgrades>) -> Vec<Up
 #[cfg(test)]
 mod tests {
 
-    use dotenv::dotenv;
+    use std::sync::Arc;
 
-    use crate::rivens::inventory::{convert_raw_inventory::{convert_inventory_data, Item}, database::{self, InventoryDB}, inventory_sync::{get_new_items, get_old_items, get_same_items}, raw_inventory::decrypt_last_data, riven_lookop::RivenDataLookup};
+    use dotenv::dotenv;
+    use tokio::sync::Mutex;
+
+    use crate::{http_client::{auth_state::AuthState, qf_client::QFClient}, rivens::inventory::{convert_raw_inventory::{convert_inventory_data, Item}, database::{self, InventoryDB}, inventory_sync::{get_new_items, get_old_items, get_same_items}, raw_inventory::decrypt_last_data, riven_lookop::RivenDataLookup}};
 
     fn update_db(db: &mut InventoryDB, new: Option<Vec<Item>>, old: Option<Vec<Item>>) -> Vec<Item> {
         if let Some(new) = new {
@@ -107,7 +110,11 @@ mod tests {
         let contrl_items = decrypt_last_data(Some("lastDataControl.dat")).unwrap();
         let added_items = decrypt_last_data(Some("lastDataAdded.dat")).unwrap();
         let subtracted_items = decrypt_last_data(Some("lastDataSubtracted.dat")).unwrap();
-        let lookup = RivenDataLookup::setup().await.unwrap();
+        let auth = AuthState::setup().expect("hehe");
+        let auth = Arc::new(Mutex::new(auth));
+        let qf = QFClient::new(auth);
+        let qf = Arc::new(Mutex::new(qf));
+        let lookup = RivenDataLookup::setup(qf).await.unwrap();
         let mut db = database::InventoryDB::open("test_db.sqlite3").unwrap();
 
         let mut db_items = update_db(&mut db, None, None);

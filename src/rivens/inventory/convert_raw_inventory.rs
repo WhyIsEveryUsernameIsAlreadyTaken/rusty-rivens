@@ -620,19 +620,24 @@ fn lookup_riven_data<'a>(
 
 #[cfg(test)]
 mod tests {
-    use std::{fs::File, io::Write};
+    use std::{fs::File, io::Write, sync::Arc};
 
     use dotenv::dotenv;
     use serde_json::to_value;
+    use tokio::sync::Mutex;
 
-    use crate::rivens::inventory::{raw_inventory::decrypt_last_data, riven_lookop::RivenDataLookup};
+    use crate::{http_client::{auth_state, qf_client::QFClient}, rivens::inventory::{raw_inventory::decrypt_last_data, riven_lookop::RivenDataLookup}};
 
     use super::convert_inventory_data;
 
     #[tokio::test]
     async fn test_convert_inventory_data() {
         dotenv().unwrap();
-        let lookup = RivenDataLookup::setup().await.unwrap();
+        let auth = auth_state::AuthState::setup().expect("hehe");
+        let auth = Arc::new(Mutex::new(auth));
+        let qf = QFClient::new(auth);
+        let qf = Arc::new(Mutex::new(qf));
+        let lookup = RivenDataLookup::setup(qf).await.unwrap();
         let raw_upgrades = decrypt_last_data(None).unwrap();
         let items = convert_inventory_data(&lookup, raw_upgrades);
         let out = to_value(items).unwrap();

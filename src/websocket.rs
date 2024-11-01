@@ -1,10 +1,9 @@
-use std::{future::Future, net::{TcpListener, TcpStream}, sync::Arc, thread, time::Duration};
+use std::{net::{TcpListener, TcpStream}, sync::Arc, thread, time::Duration};
 
 use maud::{html, PreEscaped};
-use serde_json::from_str;
 use tokio::{sync::Mutex, task::JoinHandle};
 use tungstenite::WebSocket;
-use crate::{block_in_place, rivens::inventory::{convert_raw_inventory::{self, convert_inventory_data, Item, Units}, database::InventoryDB, inventory_sync::sync_db, raw_inventory::{self, decrypt_last_data}, riven_lookop::RivenDataLookup}};
+use crate::{rivens::inventory::{convert_raw_inventory::{Item, Units}, database::InventoryDB, inventory_sync::sync_db, riven_lookop::RivenDataLookup}, server::RIVEN_LOOKUP, STOPPED};
 
 
 pub async fn sync_ui(
@@ -21,16 +20,16 @@ pub async fn sync_ui(
     (new_items, old_ids)
 }
 
-pub async fn init_rivens() -> PreEscaped<String> {
+pub async fn init_rivens() -> Box<[PreEscaped<String>]> {
     let _ = std::fs::remove_file("inventory_db.sqlite3");
     let db = InventoryDB::open("inventory_db.sqlite3").expect("grrrr2");
     let db = Arc::new(Mutex::new(db));
-    let lookup = RivenDataLookup::setup().await.expect("grrrr3");
-    let (mut new_rivens, _) = sync_ui(&Vec::new(), db, &lookup).await;
+    let lookup = RIVEN_LOOKUP.get().expect("FATAL: Could not access lookup data");
+    let (mut new_rivens, _) = sync_ui(&Vec::new(), db, lookup).await;
     assert!(!new_rivens.is_empty());
     println!("new items: {}", new_rivens.len());
     new_rivens.sort_by(|a, b| a.attributes.len().cmp(&b.attributes.len()));
-    let pagecontent = new_rivens.iter().fold(PreEscaped::default(),|acc, riven| {
+    let pagecontent = new_rivens.iter().fold(Vec::new(), |mut acc, riven| {
         let title = format!("{} {}", riven.weapon_name, riven.name);
         let stats = riven.attributes.iter().fold(PreEscaped::default(), |acc, attr|{
             let stat = match attr.units {
@@ -62,11 +61,10 @@ pub async fn init_rivens() -> PreEscaped<String> {
 
         let edit_uri = format!("/edit_open/{oid}");
 
-        let target = format!("#{id}");
+        // let target = format!("#{id}");
 
         // let height = format!("height: calc(126px + (2.2em * {}));", riven.attributes.len());
-        html! {
-            (acc)
+        acc.push(html! {
             div class="cell" id=(id) {
                 div class="celltitle" {
                     (title)
@@ -83,9 +81,10 @@ pub async fn init_rivens() -> PreEscaped<String> {
                     // img src="/wfm_favicon.ico" style="float: right; margin-left: 23px; padding-right: 13px;";
                 }
             }
-        }
+        });
+        acc
     });
-    pagecontent
+    pagecontent.into()
 }
 
 struct WsocHandle {
@@ -121,37 +120,47 @@ impl WsocHandle {
 #[tokio::main]
 pub async fn start_websocket() {
     let server = TcpListener::bind("localhost:8069").expect("could not bind to port: ");
+    server.set_nonblocking(true).expect("FATAL: Cannot set `TcpListener` as non-blocking");
     loop {
-        let (stream, _addr) = server.accept().expect("could not accept connection");
+        if let Ok((stream, _addr)) = server.accept() {
+            let mut wsoc_connection = tungstenite::accept(stream).expect("this should accept");
+            println!("handshake complete");
+            let rivens = init_rivens().await;
+            rivens.iter().for_each(|riven| {
+                assert!(!riven.clone().into_string().is_empty());
+                /* 6532fb0a9b3e2564890cc667
+                * 65d6e4d8833ce06fd505ba12
+                * 6636d57a575ceadbef0880a6
+                * 6637edfec7286187bd0974cf
+                */
+                let msg = html! {
+                    div id="riven-table" class="row" hx-swap-oob="beforeend" {
+                        (riven)
+                    }
+                };
+                wsoc_connection.send(msg.into_string().into()).unwrap();
+                thread::sleep(Duration::from_millis(10));
+            });
+            thread::sleep(Duration::from_secs(1));
+            wsoc_connection.send(delete_riven("6532fb0a9b3e2564890cc667").into_string().into()).unwrap();
+            thread::sleep(Duration::from_secs(1));
+            wsoc_connection.send(delete_riven("65d6e4d8833ce06fd505ba12").into_string().into()).unwrap();
+            thread::sleep(Duration::from_secs(1));
+            wsoc_connection.send(delete_riven("6636d57a575ceadbef0880a6").into_string().into()).unwrap();
+            thread::sleep(Duration::from_secs(1));
+            wsoc_connection.send(delete_riven("6637edfec7286187bd0974cf").into_string().into()).unwrap();
+            thread::sleep(Duration::from_secs(1));
+            wsoc_connection.close(None).expect("should be closed");
+            // let mut conn = WsocHandle::new(wsoc_connection);
+        } else {
+            if STOPPED.get() == Some(&true) {
+                println!("WebSocket Closed");
+                break;
+            }
+        };
         //if let Some(mut v) = current_conn.take() { // close the last connection
         //    v.close();
         //};
-        let mut wsoc_connection = tungstenite::accept(stream).expect("this should accept");
-        println!("handshake complete");
-        let rivens = init_rivens().await;
-        assert!(!rivens.clone().into_string().is_empty());
-        /* 6532fb0a9b3e2564890cc667
-         * 65d6e4d8833ce06fd505ba12
-         * 6636d57a575ceadbef0880a6
-         * 6637edfec7286187bd0974cf
-        */
-        let msg = html! {
-            div id="riven-table" class="row" hx-swap-oob="beforeend" {
-                (rivens)
-            }
-        };
-        wsoc_connection.send(msg.into_string().into()).unwrap();
-        thread::sleep(Duration::from_secs(1));
-        wsoc_connection.send(delete_riven("6532fb0a9b3e2564890cc667").into_string().into()).unwrap();
-        thread::sleep(Duration::from_secs(1));
-        wsoc_connection.send(delete_riven("65d6e4d8833ce06fd505ba12").into_string().into()).unwrap();
-        thread::sleep(Duration::from_secs(1));
-        wsoc_connection.send(delete_riven("6636d57a575ceadbef0880a6").into_string().into()).unwrap();
-        thread::sleep(Duration::from_secs(1));
-        wsoc_connection.send(delete_riven("6637edfec7286187bd0974cf").into_string().into()).unwrap();
-        thread::sleep(Duration::from_secs(1));
-        wsoc_connection.close(None).expect("should be closed");
-        // let mut conn = WsocHandle::new(wsoc_connection);
     }
 }
 
@@ -162,7 +171,7 @@ fn delete_riven(id: &str) -> PreEscaped<String> {
     let uri = format!("/api/delete_riven/{id}");
     html! {
         div id=(del_id) hx-swap-oob=(target) {
-            div hx-delete=(uri) hx-swap="outerHTML" hx-target=(del_id_target) hx-trigger="load";
+            div hx-delete=(uri) hx-swap="outerHTML settle:.08s" hx-target=(del_id_target) hx-trigger="load";
         }
     }
 }
