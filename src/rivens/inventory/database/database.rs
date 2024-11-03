@@ -10,8 +10,6 @@ pub struct InventoryDB {
     connection: Connection,
 }
 
-// TODO: need to refactor this to not have everything be public, and refactor
-// other places to have better controlled access to this struct
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Auction {
     pub starting_price: Option<u32>,
@@ -38,6 +36,7 @@ impl Default for Auction {
     }
 }
 
+// I need to do something about this...
 static SQL_TABLE_ITEMS: &str = "CREATE TABLE IF NOT EXISTS items ( item_id text primary key, mastery_level integer, name text, weapon_name text, polarity text, weapon_url_name text, re_rolls integer, mod_rank integer)";
 static SQL_TABLE_ATTRIBUTES: &str = "CREATE TABLE IF NOT EXISTS attributes ( item_id text, value float, positive bit, units text, url_name text, short_string text)";
 static SQL_TABLE_AUCTIONS: &str = "CREATE TABLE IF NOT EXISTS auctions ( item_id text primary key, wfm_id text, starting_price integer, buyout_price integer, owner text, updated datetime, is_direct_sell bit)";
