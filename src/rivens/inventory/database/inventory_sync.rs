@@ -59,7 +59,7 @@ pub async fn sync_db(
     Ok((same_items, delete_ids))
 }
 
-fn get_same_items(db_items: &Vec<Item>, inventory_items: &Vec<Upgrades>) -> Vec<Item> {
+fn get_same_items(db_items: &[Item], inventory_items: &[Upgrades]) -> Vec<Item> {
     db_items
         .iter()
         .filter_map(|item| {
@@ -76,7 +76,7 @@ fn get_same_items(db_items: &Vec<Item>, inventory_items: &Vec<Upgrades>) -> Vec<
         .collect()
 }
 
-fn get_old_items(db_items: &Vec<Item>, inventory_items: &Vec<Upgrades>) -> Vec<Item> {
+fn get_old_items(db_items: &[Item], inventory_items: &[Upgrades]) -> Vec<Item> {
     db_items
         .iter()
         .filter_map(|item| {
@@ -93,7 +93,7 @@ fn get_old_items(db_items: &Vec<Item>, inventory_items: &Vec<Upgrades>) -> Vec<I
         .collect()
 }
 
-fn get_new_items(db_items: &Vec<Item>, inventory_items: Vec<Upgrades>) -> Vec<Upgrades> {
+fn get_new_items(db_items: &[Item], inventory_items: Vec<Upgrades>) -> Vec<Upgrades> {
     inventory_items
         .into_iter()
         .filter(|upgrade| {

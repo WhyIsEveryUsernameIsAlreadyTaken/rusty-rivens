@@ -212,7 +212,7 @@ pub fn convert_inventory_data(lookup: &RivenDataLookup, upgrades: Vec<Upgrades>)
     items
 }
 
-fn parse_riven_name(attributes_info: &Vec<AttributeInfo>, num_buffs: usize) -> String {
+fn parse_riven_name(attributes_info: &[AttributeInfo], num_buffs: usize) -> String {
     let name = if num_buffs == 2 {
         format!("{}{}", attributes_info[0].prefix, attributes_info[1].suffix)
     } else if num_buffs == 3 {

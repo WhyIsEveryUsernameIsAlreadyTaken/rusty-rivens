@@ -104,7 +104,7 @@ impl InventoryDB {
 
 fn insert_attributes(
     tx: &Transaction,
-    attributes: &Vec<Attribute>,
+    attributes: &[Attribute],
     oid: &str,
 ) -> Result<(), rusqlite::Error> {
     let mut attr_insert = tx.prepare(SQL_ATTRIBUTE_INSERT)?;
@@ -130,7 +130,7 @@ fn insert_attributes(
 }
 
 impl InventoryDB {
-    pub(super) fn insert_items(&mut self, items: &Vec<Item>) -> Result<(), rusqlite::Error> {
+    pub(super) fn insert_items(&mut self, items: &[Item]) -> Result<(), rusqlite::Error> {
         println!("inserting items");
         let tx = self.connection.transaction()?;
         let mut item_insert = tx.prepare(SQL_ITEM_INSERT)?;
