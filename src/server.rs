@@ -1,17 +1,23 @@
 use ascii::AsciiString;
 use dotenv::dotenv;
 use once_cell::sync::OnceCell;
-use tokio::sync::Mutex;
-use std::{
-    fs, io::{self}, sync::Arc, thread, time::SystemTime
-};
+use std::{sync::Arc, thread};
 use tiny_http::Request;
+use tokio::sync::Mutex;
 
 use crate::{
-    api_operations::{uri_api_delete_riven, uri_api_login, uri_api_update_riven}, http_client::{auth_state::AuthState, qf_client::QFClient, wfm_client::WFMClient}, pages::{
-        home::{uri_edit_cancel, uri_edit_open, uri_home, uri_main, uri_not_found, uri_unauthorized},
+    api_operations::{uri_api_delete_riven, uri_api_login, uri_api_update_riven},
+    http_client::{auth_state::AuthState, qf_client::QFClient, wfm_client::WFMClient},
+    pages::{
+        home::{
+            uri_edit_cancel, uri_edit_open, uri_home, uri_main, uri_not_found, uri_unauthorized,
+        },
         login::uri_login,
-    }, resources::{uri_htmx, uri_logo, uri_styles, uri_wfmlogo}, rivens::inventory::{database::InventoryDB, riven_lookop::RivenDataLookup}, websocket::start_websocket, AppError, STOPPED
+    },
+    resources::{uri_htmx, uri_logo, uri_styles, uri_wfmlogo},
+    rivens::inventory::riven_lookop::RivenDataLookup,
+    websocket::start_websocket,
+    AppError, STOPPED,
 };
 
 #[derive(Debug)]
@@ -19,20 +25,6 @@ struct User(Option<AsciiString>);
 
 static USER: OnceCell<User> = OnceCell::new();
 pub static RIVEN_LOOKUP: OnceCell<RivenDataLookup> = OnceCell::new();
-
-struct LastModified(SystemTime, SystemTime);
-
-impl LastModified {
-    fn detect_file_change(&mut self) -> io::Result<bool> {
-        let attrs = fs::metadata("dummy.txt")?;
-        self.1 = attrs.modified().unwrap();
-        if self.1 != self.0 {
-            self.0 = self.1;
-            return Ok(true);
-        }
-        Ok(false)
-    }
-}
 
 pub async fn start_server() -> Result<(), AppError> {
     dotenv().expect("bleh");
@@ -72,11 +64,6 @@ pub async fn start_server() -> Result<(), AppError> {
     )
     .map_err(|e| e.prop("start_server".into()))?;
 
-    let mut last_modified = LastModified(SystemTime::UNIX_EPOCH, SystemTime::UNIX_EPOCH);
-    let db = InventoryDB::open("inventory.sqlite3")
-        .map_err(|e| AppError::new(e.to_string(), "start_server: InventoryDB::open".to_string()))?;
-
-    let db = Arc::new(Mutex::new(db));
     thread::spawn(|| start_websocket());
 
     let _ = tokio_rustls::rustls::crypto::ring::default_provider().install_default();

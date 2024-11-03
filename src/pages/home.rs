@@ -2,14 +2,18 @@ use ascii::AsciiString;
 use maud::{html, PreEscaped, DOCTYPE};
 use std::{
     io::{self},
-    ops::{Deref, DerefMut},
+    ops::DerefMut,
     sync::Arc,
 };
 use tiny_http::{Request, Response, StatusCode};
 use tokio::sync::Mutex;
 
 use crate::{
-    block_in_place, http_client::{qf_client::QFClient, wfm_client::WFMClient}, rivens::inventory::{convert_raw_inventory::{Item, Units}, riven_lookop::RivenDataLookup}, server::RIVEN_LOOKUP, AppError
+    block_in_place,
+    http_client::{qf_client::QFClient, wfm_client::WFMClient},
+    rivens::inventory::riven_lookop::RivenDataLookup,
+    server::RIVEN_LOOKUP,
+    AppError,
 };
 
 pub fn uri_main(
@@ -39,10 +43,11 @@ pub fn uri_main(
         .map_err(|e| e.prop("uri_main".into()))?;
         if valid {
             *logged_in = Some(true);
-            let lookup = block_in_place!( async { RivenDataLookup::setup(qf).await }).expect(
-                "FATAL: Could not retrieve riven lookup data"
-            );
-            RIVEN_LOOKUP.set(lookup).expect("FATAL: Could not store riven lookup data in memory");
+            let lookup = block_in_place!(async { RivenDataLookup::setup(qf).await })
+                .expect("FATAL: Could not retrieve riven lookup data");
+            RIVEN_LOOKUP
+                .set(lookup)
+                .expect("FATAL: Could not store riven lookup data in memory");
             html! {
                 (DOCTYPE)
                 head {

@@ -1,7 +1,7 @@
 use std::{ops::{Deref, DerefMut}, sync::Arc, time::Duration};
 
 use serde_json::json;
-use tokio::sync::{mpsc::Receiver, Mutex};
+use tokio::sync::Mutex;
 
 use crate::{block_in_place, AppError};
 
@@ -25,11 +25,11 @@ impl HttpClient for QFClient {
             rq
         };
         drop(auth_mutex);
-        let (request_sender, request_receiver) = tokio::sync::mpsc::channel::<Request>(1);
-        let (respones_sender, response_receiver) = tokio::sync::mpsc::channel::<Response>(1);
         let client_handle = if let Some(handle) = self.client_handle.clone() {
             handle
         } else {
+            let (request_sender, request_receiver) = tokio::sync::mpsc::channel::<Request>(1);
+            let (respones_sender, response_receiver) = tokio::sync::mpsc::channel::<Response>(1);
             let handle = ClientHandle::new()
             .port(443)
             .addr("https://api.quantframe.app/")

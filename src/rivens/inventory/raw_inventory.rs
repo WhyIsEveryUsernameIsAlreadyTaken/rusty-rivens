@@ -107,7 +107,7 @@ mod tests {
     #[test]
     fn test_deserialize() {
         dotenv().unwrap();
-        let upgrades = decrypt_last_data(None).unwrap();
+        let _upgrades = decrypt_last_data(None).unwrap();
         // println!("{}")
     }
 }

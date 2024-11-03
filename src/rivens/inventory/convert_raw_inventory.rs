@@ -1,7 +1,7 @@
 use std::{cmp::Ordering, error::Error, fmt::Display, ops::Deref, rc::Rc, sync::Arc};
 
 use super::riven_lookop::RivenDataLookup;
-use rusqlite::{types::FromSql, ToSql};
+use rusqlite::ToSql;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -50,7 +50,6 @@ pub struct Curses {
     #[serde(alias = "Value")]
     pub value: i32,
 }
-
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Item {
@@ -124,10 +123,7 @@ impl Ord for AttributeInfo {
     }
 }
 
-pub fn convert_inventory_data(
-    lookup: &RivenDataLookup,
-    upgrades: Vec<Upgrades>,
-) -> Vec<Item> {
+pub fn convert_inventory_data(lookup: &RivenDataLookup, upgrades: Vec<Upgrades>) -> Vec<Item> {
     let mut items: Vec<Item> = vec![];
     upgrades.iter().for_each(|upgrade| {
         let mut raw_attributes: Vec<RawAttributes> = vec![];
@@ -174,13 +170,14 @@ pub fn convert_inventory_data(
                 return;
             }
         };
-        let mut attribute_info = match lookup_riven_data(lookup, weapon_type.as_str(), raw_attributes) {
-            Ok(v) => v,
-            Err(e) => {
-                println!("{}", e);
-                return;
-            }
-        };
+        let mut attribute_info =
+            match lookup_riven_data(lookup, weapon_type.as_str(), raw_attributes) {
+                Ok(v) => v,
+                Err(e) => {
+                    println!("{}", e);
+                    return;
+                }
+            };
         attribute_info.sort();
         attribute_info.reverse();
         let name = parse_riven_name(&attribute_info, buff_count);
@@ -228,7 +225,11 @@ fn parse_riven_name(attributes_info: &Vec<AttributeInfo>, num_buffs: usize) -> S
     };
     let mut chars = name.chars();
     let first = chars.next().expect("there should be a character here");
-    format!("{}{}", first.to_uppercase().collect::<String>(), chars.collect::<String>())
+    format!(
+        "{}{}",
+        first.to_uppercase().collect::<String>(),
+        chars.collect::<String>()
+    )
 }
 
 fn calculate_attributes(
@@ -255,7 +256,10 @@ fn calculate_attributes(
             Units::Multiply => (value + 100.0).round() / 100.0,
             _ => (value * 10.0).round() / 10.0,
         };
-        let (_, short_string) = attr.short_string.split_once('>').unwrap_or(("", attr.short_string.deref()));
+        let (_, short_string) = attr
+            .short_string
+            .split_once('>')
+            .unwrap_or(("", attr.short_string.deref()));
         attributes.push(Attribute {
             value,
             positive: attr.positive,
@@ -445,7 +449,7 @@ impl TryFrom<String> for Units {
             "Multiply" => Ok(Units::Multiply),
             "Seconds" => Ok(Units::Seconds),
             "Null" => Ok(Units::Null),
-            _ => Err(InvalidUnitType(value.into()))
+            _ => Err(InvalidUnitType(value.into())),
         }
     }
 }
@@ -497,7 +501,10 @@ impl Display for UnitsLookupField {
     }
 }
 
-fn lookup_units<'a>(lookup: &'a RivenDataLookup, wfm_url: &'a str) -> Result<Units, UnitsLookupError> {
+fn lookup_units<'a>(
+    lookup: &'a RivenDataLookup,
+    wfm_url: &'a str,
+) -> Result<Units, UnitsLookupError> {
     if lookup.available_attributes.is_none() {
         return Err(UnitsLookupError::InvalidField(
             UnitsLookupField::AvailableAttributes,
@@ -587,7 +594,11 @@ fn lookup_riven_data<'a>(
             };
             let short_string = match upgrade.short_string.clone() {
                 Some(v) => v,
-                None => return Err(RivenLookupError::InvalidField(RivenLookupField::ShortString)),
+                None => {
+                    return Err(RivenLookupError::InvalidField(
+                        RivenLookupField::ShortString,
+                    ))
+                }
             };
             let prefix = match upgrade.prefix.clone() {
                 Some(v) => v,
@@ -626,7 +637,10 @@ mod tests {
     use serde_json::to_value;
     use tokio::sync::Mutex;
 
-    use crate::{http_client::{auth_state, qf_client::QFClient}, rivens::inventory::{raw_inventory::decrypt_last_data, riven_lookop::RivenDataLookup}};
+    use crate::{
+        http_client::{auth_state, qf_client::QFClient},
+        rivens::inventory::{raw_inventory::decrypt_last_data, riven_lookop::RivenDataLookup},
+    };
 
     use super::convert_inventory_data;
 

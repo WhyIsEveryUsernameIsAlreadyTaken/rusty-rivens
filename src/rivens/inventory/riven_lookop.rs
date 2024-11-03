@@ -1,17 +1,30 @@
-use std::{env, fs::{read_to_string, File}, io::Write, ops::DerefMut, path::PathBuf, sync::Arc};
+use std::{
+    env,
+    fs::{read_to_string, File},
+    io::Write,
+    ops::DerefMut,
+    path::PathBuf,
+    sync::Arc,
+};
 
 use serde::{Deserialize, Serialize};
-use serde_json::{from_str, from_value, to_string_pretty, to_value, Value};
+use serde_json::{from_str, from_value, to_string_pretty, Value};
 use time::OffsetDateTime;
 use tokio::sync::Mutex;
 
-use crate::{block_in_place, http_client::{auth_state::AuthState, client::{HttpClient, Method, RequestBuilder}, qf_client::QFClient, wfm_client::WFMClient}, AppError};
+use crate::{
+    http_client::{
+        client::{HttpClient, Method, RequestBuilder},
+        qf_client::QFClient,
+    },
+    AppError,
+};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RivenDataLookup {
     pub weapons: Option<Vec<Weapon>>,
     pub rivens_attributes: Option<Vec<RivensAttribute>>,
-    pub available_attributes: Option<Vec<AvailableAttribute>>
+    pub available_attributes: Option<Vec<AvailableAttribute>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -26,7 +39,7 @@ pub struct Weapon {
     pub unique_name: Option<Arc<str>>,
     pub name: Option<Arc<str>>,
     pub disposition: Option<f64>,
-    pub upgrade_type: Option<Arc<str>>
+    pub upgrade_type: Option<Arc<str>>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -77,15 +90,13 @@ fn from_file(path: PathBuf) -> Option<RivenDataLookup> {
     let now = ODT::now_utc().unix_timestamp();
     let elapsed = now - ts.expect("could not parse timestamp");
     if elapsed >= MONTH_IN_SECONDS {
-        println!(
-        "WARNING: Riven lookup data is too old\nGetting data from external server..."
-        );
+        println!("WARNING: Riven lookup data is too old\nGetting data from external server...");
         return None;
     }
     let res = from_value::<RivenDataLookup>(v["data"].take());
     if res.is_err() {
         println!(
-        "WARNING: Could not parse riven lookup data\nGetting data from external server..."
+            "WARNING: Could not parse riven lookup data\nGetting data from external server..."
         );
         return None;
     }
@@ -93,9 +104,7 @@ fn from_file(path: PathBuf) -> Option<RivenDataLookup> {
 }
 
 impl RivenDataLookup {
-    pub async fn setup(
-        qf: Arc<Mutex<QFClient>>,
-    ) -> Result<Self, AppError> {
+    pub async fn setup(qf: Arc<Mutex<QFClient>>) -> Result<Self, AppError> {
         let path: PathBuf = env::var("PWD")
             .map_err(|e| AppError::new(e.to_string().into(), "setup: env::var".into()))?
             .into();
@@ -122,24 +131,27 @@ impl RivenDataLookup {
             };
             let (body_value, _) = match res {
                 Ok(v) => v.res,
-                Err(e) => return Err(
-                    e.prop("setup".into())
-                )
+                Err(e) => return Err(e.prop("setup".into())),
             };
             if body_value.is_none() {
                 return Err(AppError::new(
                     String::from("No response body associated with response"),
-                    String::from("QFClient::setup")
-                ))
+                    String::from("QFClient::setup"),
+                ));
             }
-            let data = serde_json::from_value::<Self>(body_value.unwrap()).map_err(|e| AppError::new(
-                e.to_string(),
-                String::from("QFClient::setup: from_value::<RivenDataLookup>")
-            ))?;
+            let data = serde_json::from_value::<Self>(body_value.unwrap()).map_err(|e| {
+                AppError::new(
+                    e.to_string(),
+                    String::from("QFClient::setup: from_value::<RivenDataLookup>"),
+                )
+            })?;
             if let Ok(mut f) = File::create(path) {
                 use OffsetDateTime as ODT;
                 let now = ODT::now_utc().unix_timestamp();
-                let json = to_string_pretty(&RivenDataLookupMeta { unix_ts: now, data: data.clone() });
+                let json = to_string_pretty(&RivenDataLookupMeta {
+                    unix_ts: now,
+                    data: data.clone(),
+                });
                 if json.is_err() {
                     println!("ERR: Could not write lookup data to file (serialize failed)");
                 };

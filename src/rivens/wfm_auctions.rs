@@ -2,11 +2,9 @@
 mod tests {
     use time::macros::datetime;
 
-    use crate::rivens::inventory::database::Auction;
-
     #[test]
     fn test_date_time() {
-        let input = r#"{
+        let _input = r#"{
         "starting_price": 160,
         "minimal_reputation": 0,
         "item": {
@@ -58,7 +56,6 @@ mod tests {
         "oid": "66368ad69454320dffff15f1",
         "private": false
       }"#;
-        let _auction: Auction = serde_json::from_str(input).unwrap();
         let _sample = datetime!(2024-05-04 19:21:58.000+00:00);
 
         // assert_eq!(sample, auction.updated.unwrap())

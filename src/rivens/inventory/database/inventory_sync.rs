@@ -2,12 +2,13 @@ use std::{ops::DerefMut, sync::Arc};
 
 use tokio::sync::Mutex;
 
-use super::{
+use crate::rivens::inventory::{
     convert_raw_inventory::{convert_inventory_data, Item, Upgrades},
-    database::InventoryDB,
     raw_inventory::{decrypt_last_data, InventoryDecryptError},
     riven_lookop::RivenDataLookup,
 };
+
+use super::database::InventoryDB;
 
 #[derive(Debug)]
 pub enum DataBaseSyncError {
@@ -16,13 +17,13 @@ pub enum DataBaseSyncError {
 }
 
 pub async fn sync_db(
-    db: Arc<Mutex<InventoryDB>>,
+    db: Arc<Mutex<Option<InventoryDB>>>,
     lookup: &RivenDataLookup,
     inventory_items_test: Option<Vec<Upgrades>>,
 ) -> Result<(Vec<Item>, Vec<Arc<str>>), DataBaseSyncError> {
-
     let mut db = db.lock().await;
     let db = db.deref_mut();
+    let db = db.as_mut().expect("db must be some");
     let db_items: Vec<Item> = db.select_items().unwrap();
     let inventory_items = if let Some(invitest) = inventory_items_test {
         invitest
@@ -38,49 +39,70 @@ pub async fn sync_db(
 
     let delete_ids: Vec<Arc<str>> = old_items.into_iter().map(|item| item.oid).collect();
 
-    db.delete_items_auctions(delete_ids.clone()).map_err(|e| DataBaseSyncError::DatabaseError(e))?;
+    db.delete_items_auctions(delete_ids.clone())
+        .map_err(|e| DataBaseSyncError::DatabaseError(e))?;
 
     let new_items = get_new_items(&db_items, inventory_items);
+    assert!(
+        new_items.is_empty(),
+        "new_items should be empty when getting items out of db"
+    );
 
     // ADD NEW ITEMS TO DB
 
-    let mut new_items = convert_inventory_data(lookup, new_items);
-    db.insert_items(&new_items).unwrap();
+    if !new_items.is_empty() {
+        let mut new_items = convert_inventory_data(lookup, new_items);
+        db.insert_items(&new_items).unwrap();
+        same_items.append(&mut new_items);
+    }
     // PUSH CHANGES UP TO UI
-    same_items.append(&mut new_items);
     Ok((same_items, delete_ids))
 }
 
 fn get_same_items(db_items: &Vec<Item>, inventory_items: &Vec<Upgrades>) -> Vec<Item> {
-    db_items.iter()
+    db_items
+        .iter()
         .filter_map(|item| {
-            if inventory_items.iter()
-                .find(|&upgrade| item.oid == upgrade.item_id.oid ).is_some() {
+            if inventory_items
+                .iter()
+                .find(|&upgrade| item.oid == upgrade.item_id.oid)
+                .is_some()
+            {
                 Some(item.clone())
             } else {
                 None
             }
-        }).collect()
+        })
+        .collect()
 }
 
 fn get_old_items(db_items: &Vec<Item>, inventory_items: &Vec<Upgrades>) -> Vec<Item> {
-    db_items.iter()
+    db_items
+        .iter()
         .filter_map(|item| {
-            if inventory_items.iter()
-                .find(|&upgrade| upgrade.item_id.oid == item.oid).is_none() {
+            if inventory_items
+                .iter()
+                .find(|&upgrade| upgrade.item_id.oid == item.oid)
+                .is_none()
+            {
                 Some(item.clone())
             } else {
                 None
             }
-        }).collect()
+        })
+        .collect()
 }
 
 fn get_new_items(db_items: &Vec<Item>, inventory_items: Vec<Upgrades>) -> Vec<Upgrades> {
-    inventory_items.into_iter()
-        .filter(|upgrade|
-            db_items.iter()
-                .find(|&item| item.oid == upgrade.item_id.oid).is_none()
-        ).collect()
+    inventory_items
+        .into_iter()
+        .filter(|upgrade| {
+            db_items
+                .iter()
+                .find(|&item| item.oid == upgrade.item_id.oid)
+                .is_none()
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -91,9 +113,21 @@ mod tests {
     use dotenv::dotenv;
     use tokio::sync::Mutex;
 
-    use crate::{http_client::{auth_state::AuthState, qf_client::QFClient}, rivens::inventory::{convert_raw_inventory::{convert_inventory_data, Item}, database::{self, InventoryDB}, inventory_sync::{get_new_items, get_old_items, get_same_items}, raw_inventory::decrypt_last_data, riven_lookop::RivenDataLookup}};
+    use crate::{
+        http_client::{auth_state::AuthState, qf_client::QFClient},
+        rivens::inventory::{
+            convert_raw_inventory::{convert_inventory_data, Item},
+            database::{database::InventoryDB, inventory_sync::{get_new_items, get_old_items, get_same_items}},
+            raw_inventory::decrypt_last_data,
+            riven_lookop::RivenDataLookup,
+        },
+    };
 
-    fn update_db(db: &mut InventoryDB, new: Option<Vec<Item>>, old: Option<Vec<Item>>) -> Vec<Item> {
+    fn update_db(
+        db: &mut InventoryDB,
+        new: Option<Vec<Item>>,
+        old: Option<Vec<Item>>,
+    ) -> Vec<Item> {
         if let Some(new) = new {
             db.insert_items(&new).unwrap();
         };
@@ -115,7 +149,7 @@ mod tests {
         let qf = QFClient::new(auth);
         let qf = Arc::new(Mutex::new(qf));
         let lookup = RivenDataLookup::setup(qf).await.unwrap();
-        let mut db = database::InventoryDB::open("test_db.sqlite3").unwrap();
+        let mut db = InventoryDB::open("test_db.sqlite3").unwrap();
 
         let mut db_items = update_db(&mut db, None, None);
         let same = {

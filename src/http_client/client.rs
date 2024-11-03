@@ -1,6 +1,12 @@
 use core::fmt;
 use std::{
-    borrow::{Borrow, BorrowMut}, convert::Infallible, fmt::Display, io::ErrorKind, ops::{Deref, DerefMut}, str::FromStr, sync::Arc, time::{Duration, SystemTime}
+    convert::Infallible,
+    fmt::Display,
+    io::ErrorKind,
+    ops::{Deref, DerefMut},
+    str::FromStr,
+    sync::Arc,
+    time::{Duration, SystemTime},
 };
 
 use serde_json::Value;
@@ -9,7 +15,7 @@ use tokio::{
     net::TcpStream,
     sync::{
         mpsc::{
-            error::{RecvError, SendError as SError, TryRecvError},
+            error::{SendError as SError, TryRecvError},
             Receiver, Sender,
         },
         Mutex,
@@ -426,7 +432,7 @@ impl std::error::Error for HeaderInsertError {}
 #[derive(Debug)]
 pub enum SendError {
     SenderNone,
-    SenderClosed,
+    // SenderClosed,
     UriNone,
     MethodNone,
     RequestTimeout(Duration),
@@ -460,8 +466,7 @@ impl Display for SendError {
             }
             SendError::ChanSendError(e) => {
                 f.write_str(format!("ChanSendError: {}", e.to_string()).as_str())
-            }
-            SendError::SenderClosed => f.write_str("Sender part of channel closed prematurely"),
+            } // SendError::SenderClosed => f.write_str("Sender part of channel closed prematurely"),
         }
     }
 }
@@ -502,23 +507,23 @@ impl RequestBuilder {
         self
     }
 
-    pub fn get_method(&self) -> Option<Method> {
-        self.inner.method.clone()
-    }
+    // pub fn get_method(&self) -> Option<Method> {
+    //     self.inner.method.clone()
+    // }
 
     pub fn uri(mut self, uri: &str) -> Self {
         self.inner.uri = Some(uri.into());
         self
     }
 
-    pub fn headers(mut self, headers: Vec<Header>) -> Self {
-        let mut headers: Vec<Header> = headers
-            .into_iter()
-            .filter(|header| !self.inner.headers.0.contains(header))
-            .collect();
-        self.inner.headers.0.append(&mut headers);
-        self
-    }
+    // pub fn headers(mut self, headers: Vec<Header>) -> Self {
+    //     let mut headers: Vec<Header> = headers
+    //         .into_iter()
+    //         .filter(|header| !self.inner.headers.0.contains(header))
+    //         .collect();
+    //     self.inner.headers.0.append(&mut headers);
+    //     self
+    // }
 
     pub fn header(mut self, header: Header) -> Self {
         if !self.inner.headers.0.contains(&header) {
@@ -532,10 +537,10 @@ impl RequestBuilder {
         self
     }
 
-    pub fn timeout(mut self, timeout: Duration) -> Self {
-        self.inner.timeout = timeout;
-        self
-    }
+    // pub fn timeout(mut self, timeout: Duration) -> Self {
+    //     self.inner.timeout = timeout;
+    //     self
+    // }
 
     pub fn build(self) -> Request {
         self.inner
@@ -571,13 +576,13 @@ pub struct ClientHandle {
 pub enum ConnectionError {
     ConnectionTimeout(Duration),
     IoError(tokio::io::Error),
-    RustlsError(tokio_rustls::rustls::Error),
+    // RustlsError(tokio_rustls::rustls::Error),
     HttpNotSupported(Arc<str>),
-    TlsConnectorNone,
+    // TlsConnectorNone,
     HostNone,
     PortNone,
     TimeoutNone,
-    ChanSendError(SError<Response>),
+    // ChanSendError(SError<Response>),
     SendError(SendError),
 }
 
@@ -598,17 +603,17 @@ impl Display for ConnectionError {
             Self::ConnectionTimeout(to) => {
                 f.write_str(format!("connection timed out in {} seconds", to.as_secs()).as_str())
             }
-            Self::RustlsError(e) => f.write_str(format!("TlsError: {e}").as_str()),
+            // Self::RustlsError(e) => f.write_str(format!("TlsError: {e}").as_str()),
             Self::HttpNotSupported(v) => {
                 f.write_str(format!("Http addresses not supported: {v}").as_str())
             }
-            Self::TlsConnectorNone => f.write_str("TLS connector not instantiated"),
+            // Self::TlsConnectorNone => f.write_str("TLS connector not instantiated"),
             Self::HostNone => f.write_str("Host not instantiated"),
             Self::PortNone => f.write_str("Port not instantiated"),
             Self::TimeoutNone => f.write_str("Timeout not instantiated"),
-            Self::ChanSendError(e) => {
-                f.write_str(format!("ChanSendError: {}", e.to_string()).as_str())
-            }
+            // Self::ChanSendError(e) => {
+            //     f.write_str(format!("ChanSendError: {}", e.to_string()).as_str())
+            // }
             Self::SendError(e) => f.write_str(e.to_string().as_str()),
         }
     }
@@ -634,10 +639,7 @@ impl ClientHandle {
         self
     }
 
-    async fn send(
-        &mut self,
-        req: Request,
-    ) -> Result<Response, SendError> {
+    async fn send(&mut self, req: Request) -> Result<Response, SendError> {
         if self.request_sender.is_none() {
             return Err(SendError::SenderNone);
         };
@@ -647,7 +649,10 @@ impl ClientHandle {
             .send(req)
             .await
             .map_err(|e| SendError::ChanSendError(e))?;
-        let mut receiver = self.response_receiver.take().expect("FATAL: Response Receiver dropped");
+        let mut receiver = self
+            .response_receiver
+            .take()
+            .expect("FATAL: Response Receiver dropped");
         let res = match receiver.recv().await {
             Some(v) => v,
             None => return Err(SendError::Recv),
@@ -734,7 +739,10 @@ async fn handle(
         {
             req
         } else {
-            assert!(!sender.is_closed(), "FATAL Sender closed for response channel on {addr}");
+            assert!(
+                !sender.is_closed(),
+                "FATAL Sender closed for response channel on {addr}"
+            );
             // println!("handle healty");
             if STOPPED.get().is_some() {
                 drop(tstream);

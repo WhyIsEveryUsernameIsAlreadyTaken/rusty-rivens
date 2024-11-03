@@ -1,8 +1,10 @@
 use std::{
-    ops::{Deref, DerefMut}, sync::Arc, time::Duration
+    ops::{Deref, DerefMut},
+    sync::Arc,
+    time::Duration,
 };
 
-use tokio::sync::{mpsc::Receiver, Mutex};
+use tokio::sync::Mutex;
 
 use crate::{jwt::jwt_is_valid, rate_limiter::RateLimiter, AppError};
 
@@ -18,19 +20,25 @@ pub struct WFMClient {
     endpoint: String,
     limiter: Arc<Mutex<RateLimiter>>,
     auth: Arc<Mutex<AuthState>>,
-    client_handle: Option<ArcClientHandle>
+    client_handle: Option<ArcClientHandle>,
 }
 
 impl HttpClient for WFMClient {
-    async fn sender_fn(&mut self, rq: RequestBuilder) -> Result<(ArcClientHandle, RequestBuilder), AppError> {
+    async fn sender_fn(
+        &mut self,
+        rq: RequestBuilder,
+    ) -> Result<(ArcClientHandle, RequestBuilder), AppError> {
         let mut limiter_mutex = self.limiter.lock().await;
         let limiter = limiter_mutex.deref_mut();
         limiter.wait_for_token().await;
         drop(limiter_mutex);
         let auth_mutex = self.auth.lock().await; // WHY DEADLOCK ?????????????????????????????????????
         let auth = auth_mutex.deref();
-        let rq = rq
-            .header(format!("Authorization: JWT {}", auth.wfm_access_token).parse().expect("infallible"));
+        let rq = rq.header(
+            format!("Authorization: JWT {}", auth.wfm_access_token)
+                .parse()
+                .expect("infallible"),
+        );
         drop(auth_mutex);
         let (request_sender, request_receiver) = tokio::sync::mpsc::channel::<Request>(1);
         let (respones_sender, response_receiver) = tokio::sync::mpsc::channel::<Response>(1);
@@ -69,14 +77,17 @@ impl WFMClient {
         }
     }
 
-    pub async fn login(&mut self, email: &str, password: &str) -> Result<(StatusCode, Arc<str>, Arc<str>, Arc<str>), AppError> {
+    pub async fn login(
+        &mut self,
+        email: &str,
+        password: &str,
+    ) -> Result<(StatusCode, Arc<str>, Arc<str>, Arc<str>), AppError> {
         let body = serde_json::json!({"email": email, "password": password});
         let req = RequestBuilder::new()
             .method(Method::POST)
             .uri(&format!("{}{}", self.endpoint, "/auth/signin"))
             .body(body);
-        let response = match self
-            .send_request(req.build()).await {
+        let response = match self.send_request(req.build()).await {
             Ok(v) => v,
             Err(e) => return Err(AppError::new(e.to_string(), String::from("login: "))),
         };
@@ -93,12 +104,8 @@ impl WFMClient {
             if let Some(v) = val {
                 let data = v["payload"]["user"].clone();
                 let data = data.to_string();
-                user = serde_json::from_str(data.as_str()).map_err(|e| {
-                    AppError::new(
-                        e.to_string(),
-                        String::from("login: from_str"),
-                    )
-                })?;
+                user = serde_json::from_str(data.as_str())
+                    .map_err(|e| AppError::new(e.to_string(), String::from("login: from_str")))?;
                 user.wfm_access_token = token;
                 user.update().map_err(|e| e.prop("login: ".into()))?;
             }
@@ -106,7 +113,12 @@ impl WFMClient {
         let mut auth = self.auth.lock().await;
         let auth = auth.deref_mut();
         auth.set(user);
-        Ok((response.status, auth.id.clone(), auth.check_code.clone(), auth.ingame_name.clone()))
+        Ok((
+            response.status,
+            auth.id.clone(),
+            auth.check_code.clone(),
+            auth.ingame_name.clone(),
+        ))
     }
 
     pub async fn validate(&mut self) -> Result<bool, AppError> {
@@ -128,8 +140,7 @@ impl WFMClient {
             .method(Method::GET)
             .uri(format!("{}/profile", self.endpoint).as_str())
             .build();
-        let res = self
-            .send_request(req).await;
+        let res = self.send_request(req).await;
         let (body, _) = match res {
             Ok(v) => v.res,
             Err(e) => return Err(e.prop("validate".into())),
@@ -172,7 +183,14 @@ mod tests {
 
     use tokio::sync::Mutex;
 
-    use crate::{block_in_place, http_client::{auth_state::AuthState, client::{HttpClient, Method, RequestBuilder}, wfm_client::WFMClient}};
+    use crate::{
+        block_in_place,
+        http_client::{
+            auth_state::AuthState,
+            client::{HttpClient, Method, RequestBuilder},
+            wfm_client::WFMClient,
+        },
+    };
 
     #[test]
     fn test_wfmclient() {
