@@ -1,0 +1,13 @@
+on: [push]
+jobs:
+  test:
+    runs-on: docker
+    steps:
+      - uses: actions/checkout@v4
+      - run: mkdir -p artifacts
+      - run: cargo build --target x86_64-pc-windows-gnu
+      - run: mv target/x86_64-pc-windows-gnu/debug/rusty-rivens.exe artifacts/
+      - uses: actions/upload-artifact@v3
+        with:
+          name: windows-artifacts
+          path: artifacts
