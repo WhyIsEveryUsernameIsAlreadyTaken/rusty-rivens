@@ -3,6 +3,7 @@ jobs:
   test:
     runs-on: docker
     steps:
+      - run: mkdir -p artifacts
       - run: echo All Good > artifacts/out.txt
       - uses: actions/upload-artifact@v3
         with:
