@@ -111,7 +111,7 @@ mod tests {
     use std::sync::Arc;
 
     use dotenv::dotenv;
-    use tokio::sync::Mutex;
+    use tokio::sync::{broadcast, Mutex};
 
     use crate::{
         http_client::{auth_state::AuthState, qf_client::QFClient},
@@ -146,7 +146,8 @@ mod tests {
         let subtracted_items = decrypt_last_data(Some("lastDataSubtracted.dat")).unwrap();
         let auth = AuthState::setup().expect("hehe");
         let auth = Arc::new(Mutex::new(auth));
-        let qf = QFClient::new(auth);
+        let (stop_send, _) = broadcast::channel(1);
+        let qf = QFClient::new(auth, stop_send.subscribe());
         let qf = Arc::new(Mutex::new(qf));
         let lookup = RivenDataLookup::setup(qf).await.unwrap();
         let mut db = InventoryDB::open("test_db.sqlite3").unwrap();

@@ -43,7 +43,7 @@ pub fn uri_api_login(
     let lookup = block_in_place!( async { RivenDataLookup::setup(qf.clone()).await }).expect(
         "FATAL: Could not retrieve riven lookup data"
     );
-    RIVEN_LOOKUP.set(lookup).expect("FATAL: Could not store riven lookup data in memory");
+    RIVEN_LOOKUP.set(lookup).expect("FATAL: Could not store riven lookup data in sync OnceCell");
 
     // for testing
     let authorized = status.code == 200;
@@ -71,6 +71,9 @@ pub fn uri_api_login(
 }
 
 pub fn uri_api_delete_riven(rq: Request, _id: &str) -> Result<(), AppError> {
+    rq.respond(tiny_http::Response::empty(200)).map_err(|e| AppError::new(e.to_string(), "uri_api_delete_riven".to_string()))
+}
+pub fn uri_api_blacklist_riven(rq: Request, _id: &str) -> Result<(), AppError> {
     rq.respond(tiny_http::Response::empty(200)).map_err(|e| AppError::new(e.to_string(), "uri_api_delete_riven".to_string()))
 }
 

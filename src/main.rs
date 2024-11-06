@@ -1,4 +1,4 @@
-use std::{error::Error, fmt::{self, Display}, panic, process, sync::Arc};
+use std::{error::Error, fmt::{self, Display}, panic, process, sync::Arc, thread, time::Duration};
 
 
 use once_cell::sync::OnceCell;
@@ -9,6 +9,7 @@ use tao::{
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
 };
+use tokio::sync::broadcast;
 use wry::WebViewBuilder;
 
 mod pages;
@@ -22,8 +23,6 @@ mod riven_data_store;
 mod api_operations;
 mod websocket;
 mod http_client;
-
-static STOPPED: OnceCell<bool> = once_cell::sync::OnceCell::new();
 
 #[derive(Debug, Deserialize)]
 pub struct AppError {
@@ -64,15 +63,22 @@ macro_rules! block_in_place {
     };
 }
 
+#[derive(Clone, Debug)]
+pub struct StopSignal;
+
+static STOP_SENDER: OnceCell<broadcast::Sender<StopSignal>> = OnceCell::new();
+
 #[tokio::main]
 async fn main() -> wry::Result<()> {
-    tokio::task::spawn(start_server());
+    let (stop_sender, _) = broadcast::channel::<StopSignal>(1);
+    tokio::task::spawn(start_server(stop_sender.subscribe()));
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
 
+    STOP_SENDER.set(stop_sender.clone()).unwrap();
     let orig_hook = panic::take_hook();
     panic::set_hook(Box::new(move |panic_info| {
-        STOPPED.set(true).unwrap();
+        STOP_SENDER.get().unwrap().clone().send(StopSignal).unwrap();
         orig_hook(panic_info);
         process::exit(1)
     }));
@@ -119,13 +125,15 @@ async fn main() -> wry::Result<()> {
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
+        let stop_sender = stop_sender.clone();
 
         if let Event::WindowEvent {
             event: WindowEvent::CloseRequested,
             ..
         } = event
         {
-            STOPPED.set(true).unwrap();
+            stop_sender.send(StopSignal).unwrap();
+            println!("stop signal sent");
             *control_flow = ControlFlow::Exit
         }
     });

@@ -635,7 +635,7 @@ mod tests {
 
     use dotenv::dotenv;
     use serde_json::to_value;
-    use tokio::sync::Mutex;
+    use tokio::sync::{broadcast, Mutex};
 
     use crate::{
         http_client::{auth_state, qf_client::QFClient},
@@ -649,7 +649,8 @@ mod tests {
         dotenv().unwrap();
         let auth = auth_state::AuthState::setup().expect("hehe");
         let auth = Arc::new(Mutex::new(auth));
-        let qf = QFClient::new(auth);
+        let (send_stop, _) = broadcast::channel(1);
+        let qf = QFClient::new(auth, send_stop.subscribe());
         let qf = Arc::new(Mutex::new(qf));
         let lookup = RivenDataLookup::setup(qf).await.unwrap();
         let raw_upgrades = decrypt_last_data(None).unwrap();

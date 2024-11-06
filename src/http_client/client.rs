@@ -13,18 +13,17 @@ use serde_json::Value;
 use tokio::{
     io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
     net::TcpStream,
+    select,
     sync::{
-        mpsc::{
-            error::{SendError as SError, TryRecvError},
-            Receiver, Sender,
-        },
+        broadcast::Receiver as BReceiver,
+        mpsc::{error::SendError as SError, Receiver, Sender},
         Mutex,
     },
     task::JoinHandle,
 };
 use tokio_rustls::{client::TlsStream, rustls::RootCertStore};
 
-use crate::{AppError, STOPPED};
+use crate::{AppError, StopSignal};
 
 #[derive(Debug, PartialEq)]
 pub struct Header(Arc<str>, Arc<str>);
@@ -440,7 +439,6 @@ pub enum SendError {
     MalformedResponse((Arc<str>, Arc<str>)),
     HttpNotSupported(Arc<str>),
     Recv,
-    TryRecv(TryRecvError),
     ChanSendError(SError<Request>),
 }
 
@@ -460,13 +458,10 @@ impl Display for SendError {
             SendError::HttpNotSupported(v) => {
                 f.write_str(format!("Http addresses not supported: {v}").as_str())
             }
-            SendError::Recv => f.write_str(format!("RecvError: ").as_str()),
-            SendError::TryRecv(e) => {
-                f.write_str(format!("TryRecvError: {}", e.to_string()).as_str())
-            }
+            SendError::Recv => f.write_str(format!("RecvError: Channel closed").as_str()),
             SendError::ChanSendError(e) => {
                 f.write_str(format!("ChanSendError: {}", e.to_string()).as_str())
-            } // SendError::SenderClosed => f.write_str("Sender part of channel closed prematurely"),
+            }
         }
     }
 }
@@ -570,6 +565,7 @@ pub struct ClientHandle {
     request_sender: Option<Sender<Request>>,
     response_receiver: Option<Receiver<Response>>,
     inner: ClientHandleInner,
+    stop_signal: BReceiver<StopSignal>,
 }
 
 #[derive(Debug)]
@@ -622,19 +618,25 @@ impl Display for ConnectionError {
 impl std::error::Error for ConnectionError {}
 
 impl ClientHandle {
-    pub fn new() -> Self {
+    pub fn new(stop_signal: BReceiver<StopSignal>) -> Self {
         Self {
             handle: None,
             request_sender: None,
             response_receiver: None,
             inner: Default::default(),
+            stop_signal,
         }
     }
-    pub fn start_client(mut self, receiver: Receiver<Request>, sender: Sender<Response>) -> Self {
+    pub fn start_client(
+        mut self,
+        receiver: Receiver<Request>,
+        sender: Sender<Response>,
+    ) -> Self {
         self.handle = Some(tokio::task::spawn(handle(
             self.inner.clone(),
             receiver,
             sender,
+            self.stop_signal.resubscribe()
         )));
         self
     }
@@ -704,6 +706,7 @@ async fn handle(
     inner: ClientHandleInner,
     mut receiver: Receiver<Request>,
     sender: Sender<Response>,
+    mut stop_signal: BReceiver<StopSignal>,
 ) -> Result<(), ConnectionError> {
     if inner.host.is_none() {
         return Err(ConnectionError::HostNone).unwrap();
@@ -728,49 +731,39 @@ async fn handle(
     // nvm i dont like this anymore...
     // too much indentation...
     loop {
-        if STOPPED.get().is_some() {
-            drop(tstream);
-            println!("Connection Closed for {addr}");
-            return Ok(());
+        select! {
+        request = receiver.recv() => {
+            let mut request = match request {
+                Some(v) => v,
+                None => return Err(ConnectionError::SendError(SendError::Recv)),
+            };
+            let resp = match request.send(&mut tstream).await {
+                Ok(v) => v,
+                Err(e) => match &e {
+                    SendError::IoError(ie) => match ie.kind() {
+                        ErrorKind::WriteZero => {
+                            println!("Connection Closed for {addr}");
+                            println!("Reconnecting to {addr}");
+                            tstream = connect(&inner).await.unwrap();
+                            request
+                                .send(&mut tstream)
+                                .await
+                                .map_err(|e| ConnectionError::SendError(e))
+                        }
+                        _ => panic!("{e}"),
+                    },
+                    _ => panic!("{e}"),
+                }?,
+            };
+            sender.send(resp).await.expect("hello?");
+            println!("sent response through channel");
         }
-        let mut request = if let Ok(req) = receiver
-            .try_recv()
-            .map_err(|e| ConnectionError::SendError(SendError::TryRecv(e)))
-        {
-            req
-        } else {
-            assert!(
-                !sender.is_closed(),
-                "FATAL Sender closed for response channel on {addr}"
-            );
-            // println!("handle healty");
-            if STOPPED.get().is_some() {
+            _ = stop_signal.recv() => {
                 drop(tstream);
                 println!("Connection Closed for {addr}");
-                return Ok(());
-            }
-            continue;
-        };
-        let resp = match request.send(&mut tstream).await {
-            Ok(v) => v,
-            Err(e) => match &e {
-                SendError::IoError(ie) => match ie.kind() {
-                    ErrorKind::WriteZero => {
-                        println!("Connection Closed for {addr}");
-                        println!("Reconnecting to {addr}");
-                        tstream = connect(&inner).await.unwrap();
-                        request
-                            .send(&mut tstream)
-                            .await
-                            .map_err(|e| ConnectionError::SendError(e))
-                    }
-                    _ => panic!("{e}"),
-                },
-                _ => panic!("{e}"),
-            }?,
-        };
-        sender.send(resp).await.expect("hello?");
-        println!("sent response through channel");
+                break Ok(());
+            },
+        }
     }
 }
 

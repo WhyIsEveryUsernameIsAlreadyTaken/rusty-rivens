@@ -4,9 +4,9 @@ use std::{
     time::Duration,
 };
 
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, broadcast::Receiver as BReceiver};
 
-use crate::{jwt::jwt_is_valid, rate_limiter::RateLimiter, AppError};
+use crate::{jwt::jwt_is_valid, rate_limiter::RateLimiter, AppError, StopSignal};
 
 use super::{
     auth_state::AuthState,
@@ -21,6 +21,7 @@ pub struct WFMClient {
     limiter: Arc<Mutex<RateLimiter>>,
     auth: Arc<Mutex<AuthState>>,
     client_handle: Option<ArcClientHandle>,
+    stop_signal: BReceiver<StopSignal>
 }
 
 impl HttpClient for WFMClient {
@@ -45,7 +46,7 @@ impl HttpClient for WFMClient {
         let client_handle = if let Some(handle) = self.client_handle.clone() {
             handle
         } else {
-            let handle = ClientHandle::new()
+            let handle = ClientHandle::new(self.stop_signal.resubscribe())
                 .port(443)
                 .addr("https://api.warframe.market/")
                 .map_err(|e| AppError::new(e.to_string(), "send_request".to_string()))?
@@ -68,12 +69,13 @@ impl HttpClient for WFMClient {
 }
 
 impl WFMClient {
-    pub fn new(auth: Arc<Mutex<AuthState>>) -> Self {
+    pub fn new(auth: Arc<Mutex<AuthState>>, stop_signal: BReceiver<StopSignal>) -> Self {
         WFMClient {
             endpoint: String::from("https://api.warframe.market/v1"),
             limiter: Arc::new(Mutex::new(RateLimiter::new(1.0, Duration::new(1, 0)))),
             auth,
             client_handle: None,
+            stop_signal,
         }
     }
 
@@ -181,7 +183,7 @@ mod tests {
 
     use std::sync::Arc;
 
-    use tokio::sync::Mutex;
+    use tokio::sync::{broadcast, Mutex};
 
     use crate::{
         block_in_place,
@@ -196,7 +198,8 @@ mod tests {
     fn test_wfmclient() {
         let auth = AuthState::setup().unwrap();
         let auth = Arc::new(Mutex::new(auth));
-        let mut client = WFMClient::new(auth);
+        let (send_stop, _) = broadcast::channel(1);
+        let mut client = WFMClient::new(auth, send_stop.subscribe());
         let _req = block_in_place!(async move {
             let req = RequestBuilder::new()
                 .method(Method::GET)

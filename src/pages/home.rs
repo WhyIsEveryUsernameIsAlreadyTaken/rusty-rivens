@@ -110,6 +110,7 @@ pub fn uri_edit_cancel(rq: Request) -> io::Result<()> {
 pub fn uri_edit_open(rq: Request, oid: &str) -> io::Result<()> {
     let title = format!("Edit <RIVENNAME>");
     let post_url = format!("/api/update_single_riven/{oid}");
+    let blacklist_url = format!("/api/blacklist_riven/{oid}");
 
     let pagecontent = html! {
         div id="edit_screen" style="display: block;" {
@@ -161,7 +162,7 @@ pub fn uri_edit_open(rq: Request, oid: &str) -> io::Result<()> {
                                 {"Save"}
 
                             button class="cellbutton" hx-delete="/edit_cancel" hx-target="#edit_screen" hx-swap="outerHTML swap:.08s" {"Cancel"}
-                            button class="cellbutton" style="float: right; margin-right: 13px" {"Blacklist"}
+                            button class="cellbutton" hx-delete=(blacklist_url) hx-target="#edit_screen" style="float: right; margin-right: 13px" {"Blacklist"}
                         }
                     }
                 }

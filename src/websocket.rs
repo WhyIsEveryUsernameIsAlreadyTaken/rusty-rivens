@@ -1,6 +1,6 @@
 use std::{
     fs, io,
-    net::{TcpListener, TcpStream},
+    net::{SocketAddr, TcpListener, TcpStream},
     sync::Arc,
     thread,
     time::{Duration, SystemTime},
@@ -13,10 +13,11 @@ use crate::{
         riven_lookop::RivenDataLookup,
     },
     server::RIVEN_LOOKUP,
-    STOPPED,
+    StopSignal,
 };
 use maud::{html, PreEscaped};
 use tokio::{
+    select,
     sync::{
         broadcast::{self, Receiver},
         Mutex,
@@ -45,17 +46,17 @@ fn send_elements(conn: &mut WebSocket<TcpStream>, new_elements: Vec<PreEscaped<S
 
 async fn handle(mut conn: WebSocket<TcpStream>, mut receiver: Receiver<MessageType>) {
     loop {
-        if let Ok(new_content) = receiver.try_recv() {
+        if let Ok(new_content) = receiver.recv().await {
             println!("INFO: received content through channel");
             match new_content {
                 MessageType::CloseFrame => break,
                 MessageType::HTML(new_elements) => {
-                    println!("{} new elements", new_elements.len());
+                    println!("INFO: {} new elements", new_elements.len());
                     send_elements(&mut conn, new_elements);
                 }
             }
         } else {
-            continue;
+            println!("ERROR: Couldn't retrieve channel message");
         }
     }
 }
@@ -74,14 +75,68 @@ impl LastModified {
     }
 }
 
-#[tokio::main]
-pub async fn start_websocket() {
-    let server = TcpListener::bind("localhost:8069")
-        .expect("FATAL: could not bind to port: ");
+async fn handle_connection(
+    accept_result: Result<(TcpStream, SocketAddr), io::Error>,
+    rivens: &mut Vec<Item>,
+    current_connection: &mut Option<JoinHandle<()>>,
+    last_modified: &mut LastModified,
+    sender: &broadcast::Sender<MessageType>,
+    db: Arc<Mutex<Option<InventoryDB>>>,
+    lookup: &RivenDataLookup,
+) {
+    if let Ok((stream, _addr)) = accept_result {
+        let wsoc_connection =
+            tungstenite::accept(stream).expect("FATAL: Failed to handshake with client");
 
-    server
-        .set_nonblocking(true)
-        .expect("FATAL: Cannot set `TcpListener` as non-blocking");
+        // if there's an existing connection and the client is reconnecting
+        if let Some(_current_conn) = &current_connection {
+            sender
+                .send(MessageType::CloseFrame)
+                .expect("FATAL: Could not send channel close frame");
+            *current_connection = None;
+            println!("INFO: reconnecting");
+
+            // if there isnt an existing connection and the client is connecting
+            // for the first time
+        } else {
+            assert!(
+                current_connection.is_none(),
+                "FATAL: There should be no existing connection at this point"
+            );
+            *current_connection = Some(tokio::task::spawn(handle(
+                wsoc_connection,
+                sender.subscribe(),
+            )));
+            println!("INFO: Handshake complete");
+
+            let new_elements = sync_ui(rivens.clone(), vec![]).await;
+            if let Err(e) = sender.send(MessageType::HTML(new_elements)) {
+                println!("ERROR: Could not send message through channel: {e}")
+            } else {
+                println!("INFO: Sent content through channel")
+            };
+        };
+
+        // when not handling new connections
+    } else {
+        if current_connection.is_some() {
+            if last_modified.detect_file_change().unwrap_or(false) {
+                // get changes in database and inventory state
+                let (new_rivens, old_ids) = sync_ui_rivens(rivens, db.clone(), lookup).await;
+                let new_elements = sync_ui(new_rivens, old_ids).await;
+
+                // send new elements to the connection handle
+                if let Err(e) = sender.send(MessageType::HTML(new_elements)) {
+                    println!("ERROR: Could not send message through channel: {e}")
+                };
+            }
+        }
+    }
+}
+
+#[tokio::main]
+pub async fn start_websocket(mut stop_signal: Receiver<StopSignal>) {
+    let server = TcpListener::bind("localhost:8069").expect("FATAL: could not bind to port: ");
 
     let db = InventoryDB::open("inventory_db.sqlite3").expect("grrrr2");
     let db = Arc::new(Mutex::new(Some(db)));
@@ -92,10 +147,7 @@ pub async fn start_websocket() {
 
     let mut current_connection: Option<JoinHandle<()>> = None;
     let mut rivens = Vec::new();
-    let mut last_modified = LastModified(
-        SystemTime::UNIX_EPOCH,
-        SystemTime::UNIX_EPOCH
-    );
+    let mut last_modified = LastModified(SystemTime::UNIX_EPOCH, SystemTime::UNIX_EPOCH);
 
     // dont need the returned rivens or old id's as they're automatically
     // appended to `rivens` on startup and we wont have anything.
@@ -109,69 +161,32 @@ pub async fn start_websocket() {
     let (sender, _) = broadcast::channel::<MessageType>(50);
 
     loop {
-        if let Ok((stream, _addr)) = server.accept() {
-            let wsoc_connection =
-                tungstenite::accept(stream)
-                .expect("FATAL: Failed to handshake with client");
-
-            // if there's an existing connection and the client is reconnecting
-            if let Some(_current_conn) = &current_connection {
-                sender
-                    .send(MessageType::CloseFrame)
-                    .expect("FATAL: Could not send channel close frame");
-                current_connection = None;
-                println!("INFO: reconnecting");
-
-            // if there isnt an existing connection and the client is connecting
-            // for the first time
-            } else {
-                assert!(
-                    current_connection.is_none(),
-                    "FATAL: There should be no existing connection at this point"
-                );
-                current_connection = Some(tokio::task::spawn(handle(
-                    wsoc_connection,
-                    sender.subscribe(),
-                )));
-                println!("INFO: Handshake complete");
-
-                let new_elements = sync_ui(rivens.clone(), vec![]).await;
-                if let Err(e) = sender.send(MessageType::HTML(new_elements)) {
-                    println!("ERROR: Could not send message through channel: {e}")
-                } else {
-                    println!("INFO: Sent content through channel")
-                };
-            };
-
-        // when not handling new connections
-        } else {
-            if current_connection.is_some() {
-                if last_modified.detect_file_change().unwrap_or(false) {
-                    // get changes in database and inventory state
-                    let (new_rivens, old_ids) =
-                        sync_ui_rivens(&mut rivens, db.clone(), lookup).await;
-                    let new_elements = sync_ui(new_rivens, old_ids).await;
-
-                    // send new elements to the connection handle
-                    if let Err(e) = sender.send(MessageType::HTML(new_elements)) {
-                        println!("ERROR: Could not send message through channel: {e}")
-                    };
-                }
+        select! {
+            accept_result = async { server.accept() } => {
+                handle_connection(
+                    accept_result,
+                    &mut rivens,
+                    &mut current_connection,
+                    &mut last_modified,
+                    &sender,
+                    db.clone(),
+                    lookup
+                ).await
             }
-            if STOPPED.get() == Some(&true) {
-                sender
-                    .send(MessageType::CloseFrame)
-                    .expect("FATAL: Could not send channel close frame");
+                _ = stop_signal.recv() => {
+                    sender
+                        .send(MessageType::CloseFrame)
+                        .expect("FATAL: Could not send channel close frame");
 
-                if let Some(conn) = current_connection {
-                    conn.await
-                        .expect("FATAL: could not shut down client connection");
+                    if let Some(conn) = current_connection {
+                        conn.await
+                            .expect("FATAL: could not shut down client connection");
+                    }
+
+                    println!("INFO: shutting down client connection");
+                    println!("INFO: WebSocket Closed");
+                    break;
                 }
-
-                println!("INFO: shutting down client connection");
-                println!("INFO: WebSocket Closed");
-                break;
-            }
         };
     }
 
@@ -289,7 +304,6 @@ pub async fn sync_ui(
                 let stats = construct_stats(&riven.attributes);
 
                 let oid = riven.oid.clone();
-                println!("{oid}");
                 let id = format!("a{oid}");
 
                 let edit_uri = format!("/edit_open/{oid}");
